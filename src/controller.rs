@@ -1,7 +1,7 @@
 use crate::ManagementError;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeSet,
@@ -50,6 +50,15 @@ pub struct ControllerReceipt {
     pub generation: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DecisionRecord {
+    pub request_id: String,
+    pub decision: DecisionState,
+    pub reason: String,
+    pub generation: u64,
+    pub recorded_at: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct ControllerPolicy {
     pub audience: String,
@@ -91,7 +100,7 @@ impl Controller {
         key: [u8; 32],
     ) -> Result<Self, ControllerError> {
         let connection = Connection::open(path).map_err(|_| ControllerError::Storage)?;
-        connection.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY CHECK(id=1), generation INTEGER NOT NULL); INSERT OR IGNORE INTO state VALUES(1,0); CREATE TABLE IF NOT EXISTS nonces(nonce TEXT PRIMARY KEY, request_id TEXT NOT NULL, consumed_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS decisions(request_id TEXT PRIMARY KEY, decision TEXT NOT NULL, reason TEXT NOT NULL, generation INTEGER NOT NULL);").map_err(|_|ControllerError::Storage)?;
+        connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY CHECK(id=1), generation INTEGER NOT NULL); INSERT OR IGNORE INTO state VALUES(1,0); CREATE TABLE IF NOT EXISTS nonces(nonce TEXT PRIMARY KEY, request_id TEXT NOT NULL, consumed_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS decisions(request_id TEXT PRIMARY KEY, decision TEXT NOT NULL, reason TEXT NOT NULL, generation INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS decision_events(id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT NOT NULL, generation INTEGER NOT NULL, recorded_at INTEGER NOT NULL);").map_err(|_|ControllerError::Storage)?;
         Ok(Self {
             connection,
             policy,
@@ -110,7 +119,65 @@ impl Controller {
         value.as_object_mut().unwrap().remove("signature");
         serde_jcs::to_vec(&value).map_err(|_| ControllerError::Invalid("serialization"))
     }
+    fn validate_text(value: &str, maximum: usize) -> Result<(), ControllerError> {
+        if value.is_empty() || value.len() > maximum || value.chars().any(char::is_control) {
+            return Err(ControllerError::Invalid("bounded_text"));
+        }
+        Ok(())
+    }
+    fn record_rejection(
+        &self,
+        request_id: &str,
+        reason: &str,
+        now: u64,
+    ) -> Result<(), ControllerError> {
+        let generation = self.generation()?;
+        self.connection
+            .execute(
+                "INSERT INTO decision_events(request_id,decision,reason,generation,recorded_at) VALUES(?1,'rejected',?2,?3,?4)",
+                params![request_id, reason, generation, now],
+            )
+            .map_err(|_| ControllerError::Storage)?;
+        Ok(())
+    }
+    pub fn decision_history(
+        &self,
+        request_id: &str,
+    ) -> Result<Vec<DecisionRecord>, ControllerError> {
+        let mut statement = self.connection.prepare("SELECT request_id,decision,reason,generation,recorded_at FROM decision_events WHERE request_id=?1 ORDER BY id").map_err(|_|ControllerError::Storage)?;
+        let rows = statement
+            .query_map([request_id], |row| {
+                let decision: String = row.get(1)?;
+                Ok(DecisionRecord {
+                    request_id: row.get(0)?,
+                    decision: match decision.as_str() {
+                        "accepted" => DecisionState::Accepted,
+                        "rejected" => DecisionState::Rejected,
+                        "deferred" => DecisionState::Deferred,
+                        "partial" => DecisionState::Partial,
+                        _ => DecisionState::Failed,
+                    },
+                    reason: row.get(2)?,
+                    generation: row.get(3)?,
+                    recorded_at: row.get(4)?,
+                })
+            })
+            .map_err(|_| ControllerError::Storage)?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|_| ControllerError::Storage)
+    }
     pub fn evaluate(
+        &mut self,
+        request: &ManagementRequest,
+        now: u64,
+    ) -> Result<ControllerReceipt, ControllerError> {
+        let result = self.evaluate_authorized(request, now);
+        if let Err(error) = &result {
+            self.record_rejection(&request.request_id, &error.to_string(), now)?;
+        }
+        result
+    }
+    fn evaluate_authorized(
         &mut self,
         request: &ManagementRequest,
         now: u64,
@@ -118,6 +185,24 @@ impl Controller {
         if request.schema_version != "1" || request.signature_profile != SIGNATURE_PROFILE {
             return Err(ControllerError::Invalid("profile"));
         }
+        for value in [
+            &request.request_id,
+            &request.issuer_id,
+            &request.audience,
+            &request.administrative_domain,
+            &request.action,
+            &request.nonce,
+        ] {
+            Self::validate_text(value, 128)?;
+        }
+        if request.resource_ids.is_empty() || request.resource_ids.len() > 128 {
+            return Err(ControllerError::Invalid("resources"));
+        }
+        for resource in &request.resource_ids {
+            Self::validate_text(resource, 256)?;
+        }
+        Self::validate_text(&request.payload_digest, 256)?;
+        Self::validate_text(&request.plan_digest, 256)?;
         if request.audience != self.policy.audience
             || request.administrative_domain != self.policy.domain
         {
@@ -149,7 +234,7 @@ impl Controller {
             .map_err(|_| ControllerError::Signature)?;
         let tx = self
             .connection
-            .transaction()
+            .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| ControllerError::Storage)?;
         if tx
             .query_row(
@@ -180,6 +265,11 @@ impl Controller {
         tx.execute(
             "INSERT INTO decisions VALUES(?1,'accepted','AUTHORIZED',?2)",
             params![request.request_id, next],
+        )
+        .map_err(|_| ControllerError::Storage)?;
+        tx.execute(
+            "INSERT INTO decision_events(request_id,decision,reason,generation,recorded_at) VALUES(?1,'accepted','AUTHORIZED',?2,?3)",
+            params![request.request_id, next, now],
         )
         .map_err(|_| ControllerError::Storage)?;
         tx.commit().map_err(|_| ControllerError::Storage)?;
