@@ -5,9 +5,10 @@ deterministic Rust evaluator and planner, and project-owned conformance
 fixtures for IICP domains. It is Apache-2.0 software and is separate from the
 IICP wire protocol and from optional management clients and operator interfaces.
 
-The foundation is an early development surface. It does not include a running
-controller, target adapter, remote administration service or production
-deployment.
+The foundation is an early development surface. It includes a headless
+domain-local controller and bounded synthetic and runtime-configuration
+adapters. It does not include a remote administration service, service restart
+authority or production deployment.
 
 ## State model
 

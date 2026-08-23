@@ -1,7 +1,8 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use ed25519_dalek::{Signer, SigningKey};
-use iicp_management_core::{adapters::*, controller::*, digest};
-use serde_json::json;
+use iicp_client::runtime_config::{OperatingMode, RuntimeConfigV1, SecretRef};
+use iicp_management_core::{adapters::*, controller::*, digest, ConvergenceState};
+use serde_json::{json, Value};
 use std::collections::BTreeSet;
 fn request(key: &SigningKey, nonce: &str, generation: u64, now: u64) -> ManagementRequest {
     let mut r = ManagementRequest {
@@ -21,10 +22,14 @@ fn request(key: &SigningKey, nonce: &str, generation: u64, now: u64) -> Manageme
         signature_profile: SIGNATURE_PROFILE.into(),
         signature: String::new(),
     };
-    let mut v = serde_json::to_value(&r).unwrap();
-    v.as_object_mut().unwrap().remove("signature");
-    r.signature = STANDARD.encode(key.sign(&serde_jcs::to_vec(&v).unwrap()).to_bytes());
+    sign_request(key, &mut r);
     r
+}
+fn sign_request(key: &SigningKey, request: &mut ManagementRequest) {
+    request.signature.clear();
+    let mut v = serde_json::to_value(&*request).unwrap();
+    v.as_object_mut().unwrap().remove("signature");
+    request.signature = STANDARD.encode(key.sign(&serde_jcs::to_vec(&v).unwrap()).to_bytes());
 }
 fn policy(now: u64) -> ControllerPolicy {
     ControllerPolicy {
@@ -276,7 +281,34 @@ fn op(id: &str, g: u64, v: serde_json::Value) -> AdapterOperation {
         expires_at: 2000,
         capability: "synthetic-v1".into(),
         desired: v,
+        related_operation_id: None,
     }
+}
+fn authorized(mut operation: AdapterOperation, now: u64) -> AuthorizedAdapterOperation {
+    operation.expires_at = operation.expires_at.min(now + 60);
+    let directory = tempfile::tempdir().unwrap();
+    let key = SigningKey::from_bytes(&[44; 32]);
+    let mut controller_policy = policy(now);
+    controller_policy.allowed_actions = BTreeSet::from([operation.action.clone()]);
+    controller_policy.high_impact_actions = controller_policy.allowed_actions.clone();
+    let mut controller = Controller::open(
+        &directory.path().join("controller.db"),
+        controller_policy,
+        key.verifying_key().to_bytes(),
+    )
+    .unwrap();
+    let mut management_request = request(&key, &operation.operation_id, 0, now);
+    management_request.request_id = operation.operation_id.clone();
+    management_request.action = operation.action.clone();
+    management_request.resource_ids = vec![operation.target_id.clone()];
+    management_request.payload_digest = operation.desired_digest.clone();
+    management_request.plan_digest = operation.plan_digest.clone();
+    management_request.expires_at = operation.expires_at;
+    sign_request(&key, &mut management_request);
+    controller
+        .authorize_adapter_operation(&management_request, operation, now)
+        .unwrap()
+        .1
 }
 #[test]
 fn synthetic_is_idempotent_and_reversible() {
@@ -294,21 +326,310 @@ fn synthetic_is_idempotent_and_reversible() {
         a.apply(&changed, 1000).unwrap_err(),
         AdapterError::ReplayConflict
     );
-    a.rollback("one").unwrap();
+    let mut rollback = op("rollback-one", 1, Value::Null);
+    rollback.action = "rollback".into();
+    rollback.related_operation_id = Some("one".into());
+    let first_rollback = a.rollback(&rollback).unwrap();
+    assert_eq!(a.rollback(&rollback).unwrap(), first_rollback);
     assert_eq!(a.observe().unwrap(), serde_json::Value::Null)
+}
+
+#[test]
+fn synthetic_reports_drift_partial_and_irrecoverable_states() {
+    let mut adapter = SyntheticAdapter::new();
+    let applied = op("base", 0, json!({"v": 1}));
+    adapter.apply(&applied, 1000).unwrap();
+    let mut drift = op("drift", 1, json!({"v": 2}));
+    drift.action = "verify".into();
+    assert_eq!(
+        adapter.verify(&drift).unwrap().state,
+        ConvergenceState::Failed
+    );
+
+    let partial = op("partial", 1, json!({"simulate": "partial"}));
+    let partial_receipt = adapter.apply(&partial, 1000).unwrap();
+    assert_eq!(partial_receipt.state, ConvergenceState::PartiallyConverged);
+    assert_eq!(adapter.apply(&partial, 1000).unwrap(), partial_receipt);
+
+    let failed = op(
+        "irrecoverable",
+        2,
+        json!({"simulate": "irrecoverable_failure"}),
+    );
+    let failed_receipt = adapter.apply(&failed, 1000).unwrap();
+    assert_eq!(failed_receipt.state, ConvergenceState::Failed);
+    assert_eq!(adapter.apply(&failed, 1000).unwrap(), failed_receipt);
+}
+
+#[test]
+fn adapter_host_is_target_scoped_cancellable_and_dry_run_safe() {
+    let mut host = AdapterHost::new();
+    host.register("target", "synthetic-v1", Box::new(SyntheticAdapter::new()));
+    let mut dry = op("dry", 0, json!({"v": 1}));
+    dry.action = "dry_run".into();
+    let dry = authorized(dry, 1000);
+    assert_eq!(host.execute(&dry, 1000).unwrap().reason, "DRY_RUN_VALID");
+
+    let mut unknown = dry.operation().clone();
+    unknown.operation_id = "unknown".into();
+    unknown.target_id = "foreign".into();
+    let unknown = authorized(unknown, 1000);
+    assert_eq!(
+        host.execute(&unknown, 1000).unwrap_err(),
+        AdapterError::UnknownTarget
+    );
+
+    let apply = op("cancelled", 0, json!({"v": 2}));
+    host.cancel(&apply.operation_id);
+    let apply = authorized(apply, 1000);
+    assert_eq!(
+        host.execute(&apply, 1000).unwrap_err(),
+        AdapterError::Cancelled
+    );
+
+    let mut expired = op("expired", 0, json!({"v": 3}));
+    expired.expires_at = 999;
+    let expired = authorized(expired, 998);
+    assert_eq!(
+        host.execute(&expired, 1000).unwrap_err(),
+        AdapterError::Invalid
+    );
+}
+
+#[test]
+fn operation_replay_binds_plan_target_and_capability() {
+    let mut adapter = SyntheticAdapter::new();
+    let original = op("bound", 0, json!({"v": 1}));
+    adapter.apply(&original, 1000).unwrap();
+    let mut altered = original.clone();
+    altered.plan_digest = "different-plan".into();
+    assert_eq!(
+        adapter.apply(&altered, 1000).unwrap_err(),
+        AdapterError::ReplayConflict
+    );
+}
+
+#[test]
+fn adapter_generation_precondition_rejects_concurrent_modification() {
+    let mut adapter = SyntheticAdapter::new();
+    let winner = op("winner", 0, json!({"v": 1}));
+    let stale = op("stale", 0, json!({"v": 2}));
+    adapter.apply(&winner, 1000).unwrap();
+    assert_eq!(
+        adapter.apply(&stale, 1000).unwrap_err(),
+        AdapterError::Generation
+    );
+    assert_eq!(adapter.observe().unwrap(), json!({"v": 1}));
+}
+
+#[test]
+fn adapter_host_rejects_unknown_action_and_capability_and_routes_rollback() {
+    let mut host = AdapterHost::new();
+    host.register("target", "synthetic-v1", Box::new(SyntheticAdapter::new()));
+    let applied = op("applied", 0, json!({"v": 1}));
+    let applied = authorized(applied, 1000);
+    assert_eq!(host.execute(&applied, 1000).unwrap().reason, "APPLIED");
+
+    let mut bad_action = op("bad-action", 1, json!({"v": 2}));
+    bad_action.action = "shell".into();
+    let bad_action = authorized(bad_action, 1000);
+    assert_eq!(
+        host.execute(&bad_action, 1000).unwrap_err(),
+        AdapterError::Unsupported
+    );
+
+    let mut bad_capability = op("bad-cap", 1, json!({"v": 2}));
+    bad_capability.capability = "shell-v1".into();
+    let bad_capability = authorized(bad_capability, 1000);
+    assert_eq!(
+        host.execute(&bad_capability, 1000).unwrap_err(),
+        AdapterError::UnknownTarget
+    );
+
+    let mut rollback = op("rollback", 1, Value::Null);
+    rollback.action = "rollback".into();
+    rollback.related_operation_id = Some("applied".into());
+    let rollback = authorized(rollback, 1000);
+    assert_eq!(host.execute(&rollback, 1000).unwrap().reason, "ROLLED_BACK");
+}
+
+#[test]
+fn adapter_descriptor_declares_narrow_outbound_permissions() {
+    let descriptor = SyntheticAdapter::new().descriptor();
+    assert!(descriptor.outbound_only);
+    assert!(!descriptor.resolves_secret_references);
+    assert!(!descriptor.actions.iter().any(|action| action == "shell"));
+}
+
+#[test]
+fn controller_binds_adapter_target_plan_action_and_desired_state() {
+    let directory = tempfile::tempdir().unwrap();
+    let key = SigningKey::from_bytes(&[45; 32]);
+    let now = 1000;
+    let mut controller = Controller::open(
+        &directory.path().join("controller.db"),
+        policy(now),
+        key.verifying_key().to_bytes(),
+    )
+    .unwrap();
+    let operation = op("bound-request", 0, json!({"v": 1}));
+    let mut management_request = request(&key, "bound-request", 0, now);
+    management_request.resource_ids = vec!["another-target".into()];
+    management_request.payload_digest = operation.desired_digest.clone();
+    management_request.plan_digest = operation.plan_digest.clone();
+    management_request.expires_at = operation.expires_at;
+    sign_request(&key, &mut management_request);
+    assert!(matches!(
+        controller.authorize_adapter_operation(&management_request, operation, now),
+        Err(ControllerError::AdapterBinding)
+    ));
+    assert_eq!(controller.generation().unwrap(), 0);
 }
 #[test]
 fn runtime_config_atomic_secret_safe_and_rollback() {
     let d = tempfile::tempdir().unwrap();
     let p = d.path().join("runtime.json");
-    std::fs::write(&p, r#"{"schema_version":"1","mode":"local_only"}"#).unwrap();
-    let mut a = RuntimeConfigAdapter::new(&p);
-    let desired = json!({"schema_version":"1","mode":"local_only","secret_refs":{"membership":"keychain://test"}});
-    let o = op("cfg", 0, desired.clone());
+    let initial = RuntimeConfigV1::preset(OperatingMode::LocalOnly);
+    std::fs::write(&p, serde_json::to_vec(&initial).unwrap()).unwrap();
+    let mut desired_config = initial.clone();
+    desired_config.secret_refs.insert(
+        "membership".into(),
+        SecretRef::Environment {
+            name: "IICP_MEMBERSHIP".into(),
+        },
+    );
+    let desired = serde_json::to_value(&desired_config).unwrap();
+    let mut a = RuntimeConfigAdapter::open(&p).unwrap();
+    let mut o = op("cfg", 0, desired.clone());
+    o.capability = "runtime-config-v1".into();
     a.apply(&o, 1000).unwrap();
     assert_eq!(a.observe().unwrap(), desired);
-    let unsafe_o = op("unsafe", 1, json!({"schema_version":"1","password":"x"}));
+    drop(a);
+    let mut a = RuntimeConfigAdapter::open(&p).unwrap();
+    assert_eq!(a.apply(&o, 1000).unwrap().reason, "APPLIED");
+
+    let mut unsafe_value = serde_json::to_value(&initial).unwrap();
+    unsafe_value["password"] = json!("x");
+    let mut unsafe_o = op("unsafe", 1, unsafe_value);
+    unsafe_o.capability = "runtime-config-v1".into();
     assert_eq!(a.apply(&unsafe_o, 1000).unwrap_err(), AdapterError::Invalid);
-    a.rollback("cfg").unwrap();
-    assert_eq!(a.observe().unwrap()["mode"], "local_only")
+    let mut invalid_local = serde_json::to_value(&initial).unwrap();
+    invalid_local["network"]["allow_public_fallback"] = json!(true);
+    let mut invalid_local_operation = op("invalid-local", 1, invalid_local);
+    invalid_local_operation.capability = "runtime-config-v1".into();
+    assert_eq!(
+        a.apply(&invalid_local_operation, 1000).unwrap_err(),
+        AdapterError::Invalid
+    );
+    let mut rollback = op("rollback-cfg", 1, Value::Null);
+    rollback.action = "rollback".into();
+    rollback.capability = "runtime-config-v1".into();
+    rollback.related_operation_id = Some("cfg".into());
+    let first_rollback = a.rollback(&rollback).unwrap();
+    assert_eq!(a.rollback(&rollback).unwrap(), first_rollback);
+    assert_eq!(a.observe().unwrap()["mode"], "local_only");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&p).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert_eq!(
+            std::fs::metadata(p.with_extension("iicp-management-state.json"))
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+    }
+}
+
+#[test]
+fn runtime_config_interruption_and_readback_failures_are_truthful() {
+    let d = tempfile::tempdir().unwrap();
+    let initial = RuntimeConfigV1::preset(OperatingMode::LocalOnly);
+    let initial_value = serde_json::to_value(&initial).unwrap();
+    let mut desired_config = initial.clone();
+    desired_config.secret_refs.insert(
+        "test".into(),
+        SecretRef::Environment {
+            name: "IICP_TEST_REF".into(),
+        },
+    );
+    let desired = serde_json::to_value(&desired_config).unwrap();
+
+    let interrupted_path = d.path().join("interrupted.json");
+    std::fs::write(&interrupted_path, serde_json::to_vec(&initial).unwrap()).unwrap();
+    let mut operation = op("interrupted", 0, desired.clone());
+    operation.capability = "runtime-config-v1".into();
+    let mut interrupted = RuntimeConfigAdapter::open(&interrupted_path)
+        .unwrap()
+        .with_failure_injection(RuntimeConfigFailureInjection {
+            interrupt_before_replace: true,
+            ..Default::default()
+        });
+    assert_eq!(
+        interrupted.apply(&operation, 1000).unwrap_err(),
+        AdapterError::Io
+    );
+    assert_eq!(interrupted.observe().unwrap(), initial_value);
+    assert_eq!(
+        std::fs::read_dir(d.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".iicp-stage-"))
+            .count(),
+        0
+    );
+
+    let recovered_path = d.path().join("recovered.json");
+    std::fs::write(&recovered_path, serde_json::to_vec(&initial).unwrap()).unwrap();
+    let mut recovered_operation = op("recovered", 0, desired.clone());
+    recovered_operation.capability = "runtime-config-v1".into();
+    let mut recovered = RuntimeConfigAdapter::open(&recovered_path)
+        .unwrap()
+        .with_failure_injection(RuntimeConfigFailureInjection {
+            readback_mismatch: true,
+            ..Default::default()
+        });
+    let recovered_receipt = recovered.apply(&recovered_operation, 1000).unwrap();
+    assert_eq!(recovered_receipt.state, ConvergenceState::Failed);
+    assert_eq!(recovered_receipt.reason, "READBACK_MISMATCH_ROLLED_BACK");
+    assert_eq!(recovered.observe().unwrap(), initial_value);
+
+    let partial_path = d.path().join("partial.json");
+    std::fs::write(&partial_path, serde_json::to_vec(&initial).unwrap()).unwrap();
+    let mut partial_operation = op("partial", 0, desired);
+    partial_operation.capability = "runtime-config-v1".into();
+    let mut partial = RuntimeConfigAdapter::open(&partial_path)
+        .unwrap()
+        .with_failure_injection(RuntimeConfigFailureInjection {
+            readback_mismatch: true,
+            rollback_failure: true,
+            ..Default::default()
+        });
+    let receipt = partial.apply(&partial_operation, 1000).unwrap();
+    assert_eq!(receipt.state, ConvergenceState::PartiallyConverged);
+    assert_eq!(receipt.reason, "READBACK_MISMATCH_ROLLBACK_FAILED");
+}
+
+#[test]
+fn runtime_config_never_persists_unsafe_existing_rollback_material() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("unsafe-existing.json");
+    std::fs::write(&path, br#"{"schema_version":1,"password":"legacy"}"#).unwrap();
+    let desired = serde_json::to_value(RuntimeConfigV1::preset(OperatingMode::LocalOnly)).unwrap();
+    let mut operation = op("unsafe-existing", 0, desired);
+    operation.capability = "runtime-config-v1".into();
+    let mut adapter = RuntimeConfigAdapter::open(&path).unwrap();
+    assert_eq!(
+        adapter.apply(&operation, 1000).unwrap_err(),
+        AdapterError::Invalid
+    );
+    assert!(!path.with_extension("iicp-management-state.json").exists());
 }

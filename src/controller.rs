@@ -1,4 +1,7 @@
-use crate::ManagementError;
+use crate::{
+    adapters::{AdapterOperation, AuthorizedAdapterOperation},
+    ManagementError,
+};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
@@ -84,6 +87,8 @@ pub enum ControllerError {
     Policy,
     #[error("STORAGE_ERROR")]
     Storage,
+    #[error("REQUEST_ADAPTER_BINDING_INVALID")]
+    AdapterBinding,
     #[error(transparent)]
     Core(#[from] ManagementError),
 }
@@ -239,6 +244,28 @@ impl Controller {
             self.record_rejection(&request.request_id, &error.to_string(), now)?;
         }
         result
+    }
+    pub fn authorize_adapter_operation(
+        &mut self,
+        request: &ManagementRequest,
+        operation: AdapterOperation,
+        now: u64,
+    ) -> Result<(ControllerReceipt, AuthorizedAdapterOperation), ControllerError> {
+        if request.request_id != operation.operation_id
+            || request.action != operation.action
+            || request.resource_ids.len() != 1
+            || request.resource_ids[0] != operation.target_id
+            || request.payload_digest != operation.desired_digest
+            || request.plan_digest != operation.plan_digest
+            || operation.expires_at > request.expires_at
+        {
+            return Err(ControllerError::AdapterBinding);
+        }
+        let receipt = self.evaluate(request, now)?;
+        Ok((
+            receipt,
+            AuthorizedAdapterOperation::from_controller(operation),
+        ))
     }
     fn evaluate_authorized(
         &mut self,
