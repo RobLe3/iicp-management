@@ -19,6 +19,7 @@ fn open(db: &Path, key: &Path, audience: String, domain: String) -> Result<Contr
             revocation_checkpoint: Controller::now(),
             max_checkpoint_age: 3600,
             high_impact_actions: BTreeSet::from(["apply".into(), "rollback".into()]),
+            max_decision_events: 10_000,
         },
         key,
     )

@@ -67,6 +67,7 @@ pub struct ControllerPolicy {
     pub revocation_checkpoint: u64,
     pub max_checkpoint_age: u64,
     pub high_impact_actions: BTreeSet<String>,
+    pub max_decision_events: u64,
 }
 
 #[derive(Debug, Error)]
@@ -100,6 +101,12 @@ impl Controller {
         key: [u8; 32],
     ) -> Result<Self, ControllerError> {
         let connection = Connection::open(path).map_err(|_| ControllerError::Storage)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+                .map_err(|_| ControllerError::Storage)?;
+        }
         connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY CHECK(id=1), generation INTEGER NOT NULL); INSERT OR IGNORE INTO state VALUES(1,0); CREATE TABLE IF NOT EXISTS nonces(nonce TEXT PRIMARY KEY, request_id TEXT NOT NULL, consumed_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS decisions(request_id TEXT PRIMARY KEY, decision TEXT NOT NULL, reason TEXT NOT NULL, generation INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS decision_events(id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT NOT NULL, generation INTEGER NOT NULL, recorded_at INTEGER NOT NULL);").map_err(|_|ControllerError::Storage)?;
         Ok(Self {
             connection,
@@ -138,7 +145,63 @@ impl Controller {
                 params![request_id, reason, generation, now],
             )
             .map_err(|_| ControllerError::Storage)?;
+        self.prune_decision_events()?;
         Ok(())
+    }
+    fn prune_decision_events(&self) -> Result<(), ControllerError> {
+        self.connection.execute(
+            "DELETE FROM decision_events WHERE id NOT IN (SELECT id FROM decision_events ORDER BY id DESC LIMIT ?1)",
+            [self.policy.max_decision_events.max(1)],
+        ).map_err(|_| ControllerError::Storage)?;
+        Ok(())
+    }
+    pub fn record_outcome(
+        &self,
+        request_id: &str,
+        decision: DecisionState,
+        reason: &str,
+        expected_generation: u64,
+        now: u64,
+    ) -> Result<ControllerReceipt, ControllerError> {
+        Self::validate_text(request_id, 128)?;
+        Self::validate_text(reason, 256)?;
+        if !matches!(
+            decision,
+            DecisionState::Deferred | DecisionState::Partial | DecisionState::Failed
+        ) {
+            return Err(ControllerError::Invalid("outcome"));
+        }
+        let generation = self.generation()?;
+        if generation != expected_generation {
+            return Err(ControllerError::Generation);
+        }
+        let name = match decision {
+            DecisionState::Deferred => "deferred",
+            DecisionState::Partial => "partial",
+            DecisionState::Failed => "failed",
+            _ => unreachable!(),
+        };
+        let changed = self
+            .connection
+            .execute(
+                "UPDATE decisions SET decision=?2,reason=?3 WHERE request_id=?1 AND generation=?4",
+                params![request_id, name, reason, generation],
+            )
+            .map_err(|_| ControllerError::Storage)?;
+        if changed != 1 {
+            return Err(ControllerError::Invalid("unknown_request"));
+        }
+        self.connection.execute(
+            "INSERT INTO decision_events(request_id,decision,reason,generation,recorded_at) VALUES(?1,?2,?3,?4,?5)",
+            params![request_id, name, reason, generation, now],
+        ).map_err(|_| ControllerError::Storage)?;
+        self.prune_decision_events()?;
+        Ok(ControllerReceipt {
+            request_id: request_id.into(),
+            decision,
+            reason: reason.into(),
+            generation,
+        })
     }
     pub fn decision_history(
         &self,
@@ -273,6 +336,7 @@ impl Controller {
         )
         .map_err(|_| ControllerError::Storage)?;
         tx.commit().map_err(|_| ControllerError::Storage)?;
+        self.prune_decision_events()?;
         Ok(ControllerReceipt {
             request_id: request.request_id.clone(),
             decision: DecisionState::Accepted,
