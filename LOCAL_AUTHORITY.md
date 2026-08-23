@@ -25,12 +25,23 @@ High-impact operations fail when the configured revocation checkpoint is stale.
 
 Managed adapters expose only bounded capabilities. The initial contract permits
 observation, dry-run, apply, verification and rollback; it does not include an
-arbitrary shell. The synthetic adapter provides deterministic lifecycle tests.
-The runtime-configuration adapter validates a versioned configuration object,
-rejects inline secrets, writes an owner-only same-filesystem stage, replaces the
-target atomically, verifies the read-back and retains rollback material in the
-controller process. It changes configuration files only; it does not start,
-stop or restart services.
+arbitrary shell. Each host registration binds one exact target and capability.
+Operations bind the target, action, plan, desired state, expected generation,
+expiry and any referenced rollback operation. Unknown combinations fail closed.
+The adapter host is outbound-only and receives an already authorized operation;
+it has no policy-administration credential.
+
+The synthetic adapter provides deterministic lifecycle tests, including drift,
+partial convergence and irrecoverable failure. The runtime-configuration
+adapter depends on the released Rust SDK's exact `RuntimeConfigV1` type. It
+rejects invalid configurations and inline secrets while preserving typed secret
+references, writes owner-only same-filesystem stages, replaces the target
+atomically and verifies the read-back. Generation, operation bindings, receipts
+and rollback material are persisted in an owner-only sidecar so duplicate
+delivery and rollback remain deterministic after restart. The adapter does not
+resolve secret references; a future adapter that needs a secret must declare
+that permission and resolve it only at the narrow target boundary. It changes
+configuration files only; it does not start, stop or restart services.
 
 This foundation is for disposable and local evidence. It is not a remote
 administration endpoint or production deployment authorization.
