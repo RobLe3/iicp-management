@@ -34,6 +34,53 @@ fn policy(now: u64) -> ControllerPolicy {
         revocation_checkpoint: now,
         max_checkpoint_age: 100,
         high_impact_actions: BTreeSet::from(["apply".into()]),
+        max_decision_events: 100,
+    }
+}
+
+#[test]
+fn controller_persists_explicit_lifecycle_outcomes_and_bounds_history() {
+    let d = tempfile::tempdir().unwrap();
+    let p = d.path().join("state.db");
+    let k = SigningKey::from_bytes(&[11; 32]);
+    let now = 4_000;
+    let mut bounded = policy(now);
+    bounded.max_decision_events = 2;
+    let mut c = Controller::open(&p, bounded.clone(), k.verifying_key().to_bytes()).unwrap();
+    let r = request(&k, "outcome", 0, now);
+    c.evaluate(&r, now).unwrap();
+    c.record_outcome(
+        &r.request_id,
+        DecisionState::Deferred,
+        "WAITING",
+        1,
+        now + 1,
+    )
+    .unwrap();
+    c.record_outcome(
+        &r.request_id,
+        DecisionState::Partial,
+        "PARTIAL_APPLY",
+        1,
+        now + 2,
+    )
+    .unwrap();
+    assert_eq!(c.decision_history(&r.request_id).unwrap().len(), 2);
+    drop(c);
+    let c = Controller::open(&p, bounded, k.verifying_key().to_bytes()).unwrap();
+    let history = c.decision_history(&r.request_id).unwrap();
+    assert_eq!(history.last().unwrap().decision, DecisionState::Partial);
+    assert!(matches!(
+        c.record_outcome(&r.request_id, DecisionState::Accepted, "NO", 1, now + 3),
+        Err(ControllerError::Invalid("outcome"))
+    ));
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&p).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 }
 #[test]
