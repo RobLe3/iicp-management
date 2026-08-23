@@ -1,0 +1,97 @@
+{
+  "schema": "iicp.management-policy.cases.v0",
+  "status": "architecture-input",
+  "evaluator_profile": "iicp.management-policy.typed-v0",
+  "cases": [
+    {
+      "id": "allow-local-fresh-capability",
+      "input": {"location_class": "local", "effective_capabilities": ["input.text"], "evidence_age_s": 10},
+      "policy": {"all": [{"eq": ["location_class", "local"]}, {"contains": ["effective_capabilities", "input.text"]}, {"lte": ["evidence_age_s", 60]}]},
+      "expected": {"decision": "allow", "reason_codes": ["IICP-POLICY-ALLOW"]}
+    },
+    {
+      "id": "deny-disallowed-jurisdiction",
+      "input": {"jurisdiction": "ZZ"},
+      "policy": {"in": ["jurisdiction", ["DE", "FR", "NL"]]},
+      "expected": {"decision": "deny", "reason_codes": ["IICP-POLICY-DEFAULT-DENY"]}
+    },
+    {
+      "id": "preference-does-not-create-eligibility",
+      "input": {"preferred_location": "local", "eligible": false},
+      "policy": {"all": [{"eq": ["preferred_location", "local"]}, {"eq": ["eligible", true]}]},
+      "expected": {"decision": "deny", "reason_codes": ["IICP-POLICY-DEFAULT-DENY"]}
+    },
+    {
+      "id": "deny-missing-capability-evidence",
+      "input": {"effective_capabilities": null},
+      "policy": {"contains": ["effective_capabilities", "input.image"]},
+      "expected": {"decision": "indeterminate", "reason_codes": ["IICP-POLICY-EVIDENCE-UNKNOWN"]}
+    },
+    {
+      "id": "deny-stale-evidence",
+      "input": {"advertised": true, "evidence_age_s": 301},
+      "policy": {"all": [{"eq": ["advertised", true]}, {"lte": ["evidence_age_s", 300]}]},
+      "expected": {"decision": "deny", "reason_codes": ["IICP-POLICY-EVIDENCE-STALE"]}
+    },
+    {
+      "id": "reject-type-confusion",
+      "input": {"jurisdiction": ["DE"]},
+      "policy": {"in": ["jurisdiction", ["DE", "FR"]]},
+      "expected": {"decision": "indeterminate", "reason_codes": ["IICP-POLICY-INPUT-INVALID"]}
+    },
+    {
+      "id": "explicit-deny-precedence",
+      "input": {"member": true, "revoked": true},
+      "policy": {"allow": {"eq": ["member", true]}, "deny": {"eq": ["revoked", true]}},
+      "expected": {"decision": "deny", "reason_codes": ["IICP-POLICY-EXPLICIT-DENY"]}
+    },
+    {
+      "id": "reject-expression-depth",
+      "input": {},
+      "policy": {"generated_nesting": 17},
+      "expected": {"decision": "indeterminate", "reason_codes": ["IICP-POLICY-LIMIT-EXCEEDED"]}
+    },
+    {
+      "id": "reject-collection-size",
+      "input": {"generated_collection_size": 1025},
+      "policy": {"all_values_must_be_true": "generated_collection"},
+      "expected": {"decision": "indeterminate", "reason_codes": ["IICP-POLICY-LIMIT-EXCEEDED"]}
+    },
+    {
+      "id": "reject-reference-cycle",
+      "input": {},
+      "policy": {"rules": {"a": {"ref": "b"}, "b": {"ref": "a"}}, "entry": "a"},
+      "expected": {"decision": "indeterminate", "reason_codes": ["IICP-POLICY-INPUT-INVALID"]}
+    },
+    {
+      "id": "reject-fuel-exhaustion",
+      "input": {"generated_operations": 50001},
+      "policy": {"evaluate_generated_operations": true},
+      "expected": {"decision": "indeterminate", "reason_codes": ["IICP-POLICY-LIMIT-EXCEEDED"]}
+    },
+    {
+      "id": "adapter-timeout-is-not-allow",
+      "input": {"adapter_result": "timeout"},
+      "policy": {"require_adapter_allow": true},
+      "expected": {"decision": "indeterminate", "reason_codes": ["IICP-POLICY-ADAPTER-ERROR"]}
+    },
+    {
+      "id": "malformed-adapter-output-is-not-allow",
+      "input": {"adapter_result": {"allow": "yes"}},
+      "policy": {"require_adapter_allow": true},
+      "expected": {"decision": "indeterminate", "reason_codes": ["IICP-POLICY-ADAPTER-ERROR"]}
+    },
+    {
+      "id": "caller-time-controls-freshness",
+      "input": {"evaluated_at": "2026-08-23T12:00:00Z", "evidence_expires_at": "2026-08-23T12:00:01Z"},
+      "policy": {"evidence_valid_at": "evaluated_at"},
+      "expected": {"decision": "allow", "reason_codes": ["IICP-POLICY-ALLOW"]}
+    },
+    {
+      "id": "ai-proposal-cannot-apply",
+      "input": {"proposal_source": "ai", "apply_authority": false},
+      "policy": {"action": "apply", "requires_authority": true},
+      "expected": {"decision": "deny", "reason_codes": ["IICP-POLICY-AUTHORITY-DENIED"]}
+    }
+  ]
+}

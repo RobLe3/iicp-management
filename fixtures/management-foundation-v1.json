@@ -1,0 +1,42 @@
+{
+  "fixture_version": "1.0.0",
+  "evidence_class": "project-verified",
+  "contract_schema": "../contracts/management-contract-v1.schema.json",
+  "cases": [
+    {
+      "id": "EM1-01",
+      "description": "Equivalent resource order produces one plan digest.",
+      "expected": {"result": "accept", "same_plan_digest": true}
+    },
+    {
+      "id": "EM1-02",
+      "description": "Stale accepted generation fails before planning.",
+      "expected": {"result": "reject", "reason": "PLAN_STALE_GENERATION"}
+    },
+    {
+      "id": "EM1-03",
+      "description": "Unknown required security behavior fails closed.",
+      "expected": {"result": "reject", "reason": "PROFILE_UNSUPPORTED_REQUIRED"}
+    },
+    {
+      "id": "EM1-04",
+      "description": "An inline secret is not a portable management artifact.",
+      "expected": {"result": "reject", "reason": "SECRET_INLINE_VALUE_FORBIDDEN"}
+    },
+    {
+      "id": "EM1-05",
+      "description": "Approval does not authorize a different plan or audience.",
+      "expected": {"result": "reject", "reason": "PLAN_APPROVAL_DIGEST_MISMATCH_OR_AUTHZ_WRONG_AUDIENCE"}
+    },
+    {
+      "id": "EM1-06",
+      "description": "Independent observations may produce partial convergence.",
+      "expected": {"result": "accept", "effective_state": "partially_converged"}
+    }
+  ],
+  "non_claims": [
+    "No independent interoperability evidence",
+    "No controller or adapter implementation",
+    "No production authorization"
+  ]
+}
