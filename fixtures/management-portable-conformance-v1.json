@@ -1,0 +1,240 @@
+{
+  "fixture_version": "1.0.0",
+  "cases": [
+    {
+      "id": "EM1-CANON-01",
+      "operation": "digest",
+      "input": {
+        "b": 1,
+        "a": 2
+      },
+      "expected": "sha256:d3626ac30a87e6f7a6428233b3c68299976865fa5508e4267c5415c76af7a772"
+    },
+    {
+      "id": "EM1-PLAN-01",
+      "operation": "plan",
+      "input": {
+        "bundle": {
+          "schema_version": "1",
+          "bundle_id": "bundle-portable",
+          "issuer": "did:iicp:controller:fixture",
+          "audience": "domain:fixture",
+          "expected_generation": 7,
+          "resources": [
+            {
+              "resource_id": "b",
+              "kind": "runtime-config",
+              "desired": {
+                "value": 2
+              },
+              "secret_refs": {}
+            },
+            {
+              "resource_id": "a",
+              "kind": "runtime-config",
+              "desired": {
+                "value": 1
+              },
+              "secret_refs": {}
+            }
+          ],
+          "extensions": []
+        },
+        "accepted": {
+          "generation": 7,
+          "resource_digests": {}
+        }
+      },
+      "expected": {
+        "schema_version": "1",
+        "planner_version": "iicp-management-planner/0.1.0",
+        "bundle_id": "bundle-portable",
+        "bundle_digest": "sha256:a84d71d18ed39bf2d3c3e19b7d885915b976b522ad34da2af570e813a9e07baa",
+        "expected_generation": 7,
+        "target_generation": 8,
+        "operations": [
+          {
+            "operation_id": "op-0001",
+            "resource_id": "a",
+            "action": "create",
+            "before_digest": "absent",
+            "after_digest": "sha256:48208f9428d64634bd8e28ff345bf0eab60d53c18fa2fbdb0b9bc1e84df2b5f6",
+            "expected_generation": 7,
+            "target_generation": 8,
+            "idempotency_key": "bundle-portable:a"
+          },
+          {
+            "operation_id": "op-0002",
+            "resource_id": "b",
+            "action": "create",
+            "before_digest": "absent",
+            "after_digest": "sha256:49c987621f206f09e5fbe23b516b55a36f838cb14867961f1d84a554d3a35b6b",
+            "expected_generation": 7,
+            "target_generation": 8,
+            "idempotency_key": "bundle-portable:b"
+          }
+        ]
+      }
+    },
+    {
+      "id": "EM1-MUT-AUDIENCE",
+      "operation": "approval",
+      "input": {
+        "approval": {
+          "audience": "domain:other",
+          "generation": 7,
+          "bundle_digest": "b",
+          "plan_digest": "p"
+        },
+        "plan": {
+          "audience": "domain:test",
+          "generation": 7,
+          "bundle_digest": "b",
+          "plan_digest": "p"
+        }
+      },
+      "expected": "AUTHZ_WRONG_AUDIENCE"
+    },
+    {
+      "id": "EM1-MUT-GENERATION",
+      "operation": "approval",
+      "input": {
+        "approval": {
+          "audience": "domain:test",
+          "generation": 6,
+          "bundle_digest": "b",
+          "plan_digest": "p"
+        },
+        "plan": {
+          "audience": "domain:test",
+          "generation": 7,
+          "bundle_digest": "b",
+          "plan_digest": "p"
+        }
+      },
+      "expected": "PLAN_APPROVAL_DIGEST_MISMATCH"
+    },
+    {
+      "id": "EM1-MUT-DIGEST",
+      "operation": "approval",
+      "input": {
+        "approval": {
+          "audience": "domain:test",
+          "generation": 7,
+          "bundle_digest": "changed",
+          "plan_digest": "p"
+        },
+        "plan": {
+          "audience": "domain:test",
+          "generation": 7,
+          "bundle_digest": "b",
+          "plan_digest": "p"
+        }
+      },
+      "expected": "PLAN_APPROVAL_DIGEST_MISMATCH"
+    },
+    {
+      "id": "EM1-APPROVAL-OK",
+      "operation": "approval",
+      "input": {
+        "approval": {
+          "audience": "domain:test",
+          "generation": 7,
+          "bundle_digest": "b",
+          "plan_digest": "p"
+        },
+        "plan": {
+          "audience": "domain:test",
+          "generation": 7,
+          "bundle_digest": "b",
+          "plan_digest": "p"
+        }
+      },
+      "expected": "authorized"
+    },
+    {
+      "id": "EM1-MUT-RESOURCE",
+      "operation": "receipt",
+      "input": {
+        "expected_resources": [
+          "a",
+          "b"
+        ],
+        "observations": [
+          {
+            "resource_id": "a",
+            "state": "converged"
+          },
+          {
+            "resource_id": "x",
+            "state": "failed"
+          }
+        ],
+        "claimed": "partially_converged"
+      },
+      "expected": "RECEIPT_BINDING_MISMATCH"
+    },
+    {
+      "id": "EM1-MUT-RESULT",
+      "operation": "receipt",
+      "input": {
+        "expected_resources": [
+          "a",
+          "b"
+        ],
+        "observations": [
+          {
+            "resource_id": "a",
+            "state": "converged"
+          },
+          {
+            "resource_id": "b",
+            "state": "failed"
+          }
+        ],
+        "claimed": "converged"
+      },
+      "expected": "RECEIPT_EFFECTIVE_STATE_MISMATCH"
+    },
+    {
+      "id": "EM1-RECEIPT-PARTIAL",
+      "operation": "receipt",
+      "input": {
+        "expected_resources": [
+          "a",
+          "b"
+        ],
+        "observations": [
+          {
+            "resource_id": "a",
+            "state": "converged"
+          },
+          {
+            "resource_id": "b",
+            "state": "failed"
+          }
+        ],
+        "claimed": "partially_converged"
+      },
+      "expected": "verified"
+    },
+    {
+      "id": "EM1-MUT-EXTENSION",
+      "operation": "extension",
+      "input": {
+        "class": "REQUIRED_SECURITY_CRITICAL",
+        "supported": false
+      },
+      "expected": "PROFILE_UNSUPPORTED_REQUIRED"
+    },
+    {
+      "id": "EM1-OPTIONAL-EXTENSION",
+      "operation": "extension",
+      "input": {
+        "class": "OPTIONAL_IGNORABLE",
+        "supported": false
+      },
+      "expected": "continue"
+    }
+  ]
+}

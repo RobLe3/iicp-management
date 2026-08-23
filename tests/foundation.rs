@@ -59,6 +59,26 @@ fn digest_uses_rfc8785_canonical_member_order() {
 }
 
 #[test]
+fn portable_planning_vector_matches_reference_core() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../fixtures/management-portable-conformance-v1.json"
+    ))
+    .unwrap();
+    let case = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["id"] == "EM1-PLAN-01")
+        .unwrap();
+    let input: DesiredStateBundle =
+        serde_json::from_value(case["input"]["bundle"].clone()).unwrap();
+    let accepted: AcceptedState =
+        serde_json::from_value(case["input"]["accepted"].clone()).unwrap();
+    let actual = plan(&input, &accepted, &BTreeSet::new(), 10).unwrap();
+    assert_eq!(serde_json::to_value(actual).unwrap(), case["expected"]);
+}
+
+#[test]
 fn stale_generation_fails_closed() {
     let mut input = bundle(vec![resource("a", 1)]);
     input.expected_generation = 6;
