@@ -88,12 +88,14 @@ pub trait ManagedAdapter {
 pub struct AdapterHost {
     adapters: BTreeMap<(String, String), Box<dyn ManagedAdapter>>,
     cancelled: BTreeSet<String>,
+    completed: BTreeMap<String, (String, AdapterReceipt)>,
 }
 impl AdapterHost {
     pub fn new() -> Self {
         Self {
             adapters: BTreeMap::new(),
             cancelled: BTreeSet::new(),
+            completed: BTreeMap::new(),
         }
     }
     pub fn register(
@@ -115,6 +117,14 @@ impl AdapterHost {
     ) -> Result<AdapterReceipt, AdapterError> {
         let operation = authorized.operation();
         validate_operation(operation, now)?;
+        let binding = operation_binding(operation)?;
+        if let Some((prior, receipt)) = self.completed.get(&operation.operation_id) {
+            return if prior == &binding {
+                Ok(receipt.clone())
+            } else {
+                Err(AdapterError::ReplayConflict)
+            };
+        }
         if self.cancelled.contains(&operation.operation_id) {
             return Err(AdapterError::Cancelled);
         }
@@ -130,13 +140,16 @@ impl AdapterHost {
         {
             return Err(AdapterError::Unsupported);
         }
-        match operation.action.as_str() {
+        let receipt = match operation.action.as_str() {
             "dry_run" => adapter.dry_run(operation, now),
             "apply" => adapter.apply(operation, now),
             "verify" | "observe" => adapter.verify(operation),
             "rollback" => adapter.rollback(operation),
             _ => Err(AdapterError::Unsupported),
-        }
+        }?;
+        self.completed
+            .insert(operation.operation_id.clone(), (binding, receipt.clone()));
+        Ok(receipt)
     }
 }
 impl Default for AdapterHost {
