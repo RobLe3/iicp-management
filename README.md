@@ -60,6 +60,10 @@ interoperability evidence.
 See [CONFORMANCE.md](CONFORMANCE.md) for the language-neutral EM-1 fixture pack,
 clean-room instructions and result-bundle requirements.
 
+The next foundation layer provides a headless domain-local controller and
+capability-scoped adapters. See [LOCAL_AUTHORITY.md](LOCAL_AUTHORITY.md) for its
+authority, IPC, persistence and deployment boundaries.
+
 ## Authority boundary
 
 The contracts do not grant management authority. A future domain-local

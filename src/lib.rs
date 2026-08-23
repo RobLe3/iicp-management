@@ -5,6 +5,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 
+pub mod adapters;
+pub mod controller;
+
 pub const CONTRACT_VERSION: &str = "1";
 pub const PLANNER_VERSION: &str = "iicp-management-planner/0.1.0";
 pub const POLICY_PROFILE: &str = "iicp.management-policy.typed-v0";
