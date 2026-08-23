@@ -1,12 +1,12 @@
-# Initial extraction record
+# Repository provenance
 
-The initial public source was extracted from the Apache-2.0-eligible
-`management/` staging tree in `RobLe3/iicp.network` after merge commit
-`4f84e6db` on 23 August 2026.
+This repository is the authoritative public home of the Apache-2.0 IICP
+management foundation. Its initial source was reviewed before publication and
+was limited to implementation-neutral material.
 
 Only neutral contracts, Rust core code, fixtures, tests and conformance tooling
-were transferred. No private Enterprise Orchestrator, operator GUI, product
-workflow, analytics, IAM or commercial connector source was included.
+are in scope. Product workflows, analytics, IAM integrations, managed services
+and product-specific interface contracts are not part of this repository.
 
 The initial extraction is project-authored evidence. It does not establish an
 independent implementation, production readiness or a new IICP wire protocol.

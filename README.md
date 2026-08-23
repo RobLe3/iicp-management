@@ -3,7 +3,7 @@
 This repository contains implementation-neutral management contracts, a
 deterministic Rust evaluator and planner, and project-owned conformance
 fixtures for IICP domains. It is Apache-2.0 software and is separate from the
-IICP wire protocol, the private Enterprise Orchestrator and operator GUI.
+IICP wire protocol and from optional management clients and operator interfaces.
 
 The foundation is an early development surface. It does not include a running
 controller, target adapter, remote administration service or production
@@ -43,6 +43,7 @@ with cycle detection before evaluation.
 cargo test --locked
 cargo clippy --locked --all-targets -- -D warnings
 cargo run --locked --bin iicp-management-conformance
+python3 tools/run_management_conformance.py fixtures/management-portable-conformance-v1.json
 ```
 
 The conformance runner accepts an optional fixture path:
@@ -56,6 +57,9 @@ It writes a deterministic JSON report. Exit status `0` means every case passed,
 invalid. The built-in report is project evidence. It is not independent
 interoperability evidence.
 
+See [CONFORMANCE.md](CONFORMANCE.md) for the language-neutral EM-1 fixture pack,
+clean-room instructions and result-bundle requirements.
+
 ## Authority boundary
 
 The contracts do not grant management authority. A future domain-local
@@ -63,7 +67,7 @@ controller must authenticate and authorize an exact plan before any adapter can
 apply it. IICP membership, discovery, dispatch tickets and provider reputation
 do not substitute for management authorization.
 
-Commercial services may consume these contracts but cannot widen domain-local
-policy or become undeclared IICP protocol authority. Product workflows,
-analytics, IAM integrations, managed operations and proprietary GUI contracts
-belong outside this repository.
+Other services may consume these contracts but cannot widen domain-local policy
+or become undeclared IICP protocol authority. Product workflows, analytics, IAM
+integrations, managed operations and product-specific interfaces remain outside
+this repository.
