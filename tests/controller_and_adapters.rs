@@ -55,6 +55,168 @@ fn controller_replay_restart_and_binding() {
         c.evaluate(&wrong, now),
         Err(ControllerError::Policy)
     ));
+    let rejected = c.decision_history(&wrong.request_id).unwrap();
+    assert_eq!(rejected.len(), 1);
+    assert_eq!(rejected[0].decision, DecisionState::Rejected);
+    assert_eq!(rejected[0].generation, 1);
+    drop(c);
+    let c = Controller::open(&p, policy(now), k.verifying_key().to_bytes()).unwrap();
+    assert_eq!(
+        c.decision_history(&r.request_id).unwrap()[0].decision,
+        DecisionState::Accepted
+    );
+    assert_eq!(
+        c.decision_history(&wrong.request_id).unwrap()[0].decision,
+        DecisionState::Rejected
+    );
+}
+
+#[test]
+fn controller_rejects_tamper_stale_revocation_and_unbounded_input() {
+    let d = tempfile::tempdir().unwrap();
+    let p = d.path().join("state.db");
+    let k = SigningKey::from_bytes(&[8; 32]);
+    let now = 2000;
+    let mut c = Controller::open(&p, policy(now), k.verifying_key().to_bytes()).unwrap();
+
+    let mut tampered = request(&k, "tampered", 0, now);
+    tampered.plan_digest = "sha256:altered".into();
+    assert!(matches!(
+        c.evaluate(&tampered, now),
+        Err(ControllerError::Signature)
+    ));
+    assert_eq!(
+        c.decision_history(&tampered.request_id).unwrap()[0].decision,
+        DecisionState::Rejected
+    );
+
+    let mut stale_policy = policy(now);
+    stale_policy.revocation_checkpoint = 1;
+    let mut stale = Controller::open(
+        &d.path().join("stale.db"),
+        stale_policy,
+        k.verifying_key().to_bytes(),
+    )
+    .unwrap();
+    let stale_request = request(&k, "stale", 0, now);
+    assert!(matches!(
+        stale.evaluate(&stale_request, now),
+        Err(ControllerError::Policy)
+    ));
+
+    let mut oversized = request(&k, "bounded", 0, now);
+    oversized.issuer_id = "x".repeat(129);
+    assert!(matches!(
+        c.evaluate(&oversized, now),
+        Err(ControllerError::Invalid("bounded_text"))
+    ));
+}
+
+#[test]
+fn concurrent_generation_has_one_winner_without_widening_authority() {
+    use std::sync::{Arc, Barrier};
+    use std::thread;
+    let d = tempfile::tempdir().unwrap();
+    let p = d.path().join("state.db");
+    let k = SigningKey::from_bytes(&[9; 32]);
+    let now = 3000;
+    Controller::open(&p, policy(now), k.verifying_key().to_bytes()).unwrap();
+    let barrier = Arc::new(Barrier::new(2));
+    let mut handles = Vec::new();
+    for nonce in ["parallel-a", "parallel-b"] {
+        let path = p.clone();
+        let barrier = barrier.clone();
+        let key = k.clone();
+        handles.push(thread::spawn(move || {
+            let mut controller =
+                Controller::open(&path, policy(now), key.verifying_key().to_bytes()).unwrap();
+            let signed = request(&key, nonce, 0, now);
+            barrier.wait();
+            controller.evaluate(&signed, now)
+        }));
+    }
+    let results: Vec<_> = handles
+        .into_iter()
+        .map(|handle| handle.join().unwrap())
+        .collect();
+    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
+    assert_eq!(
+        results
+            .iter()
+            .filter(|result| matches!(result, Err(ControllerError::Generation)))
+            .count(),
+        1
+    );
+    let controller = Controller::open(&p, policy(now), k.verifying_key().to_bytes()).unwrap();
+    assert_eq!(controller.generation().unwrap(), 1);
+}
+
+#[cfg(unix)]
+#[test]
+fn headless_controller_transcript_is_owner_only_and_restart_safe() {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::{fs::PermissionsExt, net::UnixStream};
+    use std::process::{Command, Stdio};
+    use std::thread;
+    use std::time::Duration;
+
+    let d = tempfile::tempdir().unwrap();
+    let socket = d.path().join("controller.sock");
+    let db = d.path().join("controller.db");
+    let public_key = d.path().join("controller.pub");
+    let key = SigningKey::from_bytes(&[10; 32]);
+    std::fs::write(&public_key, key.verifying_key().to_bytes()).unwrap();
+    let now = Controller::now();
+    let signed = request(&key, "cli-transcript", 0, now);
+
+    let start = || {
+        Command::new(env!("CARGO_BIN_EXE_iicp-management-controller"))
+            .args([
+                "serve",
+                socket.to_str().unwrap(),
+                db.to_str().unwrap(),
+                public_key.to_str().unwrap(),
+                "controller:test",
+                "domain:test",
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap()
+    };
+    let transact = |request: &ManagementRequest| {
+        let mut stream = UnixStream::connect(&socket).unwrap();
+        writeln!(stream, "{}", serde_json::to_string(request).unwrap()).unwrap();
+        let mut response = String::new();
+        BufReader::new(stream).read_line(&mut response).unwrap();
+        serde_json::from_str::<serde_json::Value>(&response).unwrap()
+    };
+
+    let mut child = start();
+    for _ in 0..100 {
+        if socket.exists() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    assert!(socket.exists());
+    assert_eq!(
+        std::fs::metadata(&socket).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert_eq!(transact(&signed)["decision"], "accepted");
+    child.kill().unwrap();
+    child.wait().unwrap();
+
+    let mut restarted = start();
+    thread::sleep(Duration::from_millis(100));
+    assert!(socket.exists());
+    let replay = transact(&signed);
+    assert_eq!(replay["decision"], "rejected");
+    assert_eq!(replay["reason"], "REQUEST_REPLAY");
+    restarted.kill().unwrap();
+    restarted.wait().unwrap();
 }
 fn op(id: &str, g: u64, v: serde_json::Value) -> AdapterOperation {
     AdapterOperation {
