@@ -368,7 +368,16 @@ fn adapter_host_is_target_scoped_cancellable_and_dry_run_safe() {
     let mut dry = op("dry", 0, json!({"v": 1}));
     dry.action = "dry_run".into();
     let dry = authorized(dry, 1000);
-    assert_eq!(host.execute(&dry, 1000).unwrap().reason, "DRY_RUN_VALID");
+    let dry_receipt = host.execute(&dry, 1000).unwrap();
+    assert_eq!(dry_receipt.reason, "DRY_RUN_VALID");
+    assert_eq!(host.execute(&dry, 1000).unwrap(), dry_receipt);
+    let mut altered_dry = dry.operation().clone();
+    altered_dry.plan_digest = "another-plan".into();
+    let altered_dry = authorized(altered_dry, 1000);
+    assert_eq!(
+        host.execute(&altered_dry, 1000).unwrap_err(),
+        AdapterError::ReplayConflict
+    );
 
     let mut unknown = dry.operation().clone();
     unknown.operation_id = "unknown".into();
