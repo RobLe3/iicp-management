@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/schemas/progressive-authority-v1.schema.json",
+  "title": "IICP management progressive-authority evidence v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "evidence_id", "mode", "application_id", "intent",
+    "policy_generation", "fact_snapshot_digest", "observed_at",
+    "actual_decision", "proposed_decision", "plan_digest",
+    "authorization_evidence_digest", "policy_boundary", "may_request_apply",
+    "extensions"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "evidence_id": {"type": "string", "minLength": 1},
+    "mode": {"enum": ["observe", "recommend", "confirm", "automatic_within_policy"]},
+    "application_id": {"type": "string", "minLength": 1},
+    "intent": {"type": "string", "minLength": 1},
+    "policy_generation": {"type": "integer", "minimum": 0},
+    "fact_snapshot_digest": {"$ref": "#/$defs/digest"},
+    "observed_at": {"type": "integer", "minimum": 0},
+    "actual_decision": {"oneOf": [{"$ref": "#/$defs/decision"}, {"type": "null"}]},
+    "proposed_decision": {"oneOf": [{"$ref": "#/$defs/decision"}, {"type": "null"}]},
+    "plan_digest": {"oneOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]},
+    "authorization_evidence_digest": {"oneOf": [{"$ref": "#/$defs/digest"}, {"type": "null"}]},
+    "policy_boundary": {"enum": ["satisfied", "failed", "indeterminate"]},
+    "may_request_apply": {"type": "boolean"},
+    "extensions": {"type": "array", "items": {"$ref": "#/$defs/extension"}}
+  },
+  "$defs": {
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "decision": {"enum": ["allow", "deny", "indeterminate"]},
+    "extension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "class"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "class": {"enum": ["OPTIONAL_IGNORABLE", "OPTIONAL_NEGOTIABLE", "REQUIRED_UNDERSTOOD", "REQUIRED_SECURITY_CRITICAL"]}
+      }
+    }
+  }
+}

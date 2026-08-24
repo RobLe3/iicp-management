@@ -39,8 +39,9 @@ observation time. They are never presented as original task events.
 - A later interoperable contract can add mode and provenance fields without an
   IICP wire-protocol change.
 
-## Follow-up boundary
+## Serialized projection
 
-The exact serialized projection and fixtures require separate review. Until
-that work is accepted, implementations may experiment locally but cannot claim
-portable management-profile conformance for these modes.
+`contracts/progressive-authority-v1.schema.json` defines the portable evidence
+shape. Project-owned Rust and Python implementations consume the same fixture
+pack. This is project conformance evidence, not independent interoperability or
+permission to mutate a deployed domain.

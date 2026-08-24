@@ -1,0 +1,64 @@
+{
+  "schema": "iicp.management-progressive-authority.cases.v1",
+  "version": "1",
+  "evidence_class": "project-verified",
+  "cases": [
+    {
+      "id": "PA1-OBSERVE-ACCEPT",
+      "input": {"schema_version":"1","evidence_id":"evidence:observe","mode":"observe","application_id":"application:finance","intent":"urn:iicp:intent:test:v1","policy_generation":4,"fact_snapshot_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed_at":100,"actual_decision":"deny","proposed_decision":null,"plan_digest":null,"authorization_evidence_digest":null,"policy_boundary":"indeterminate","may_request_apply":false,"extensions":[]},
+      "expected": {"result":"accept"}
+    },
+    {
+      "id": "PA1-OBSERVE-MUTATION-REJECT",
+      "input": {"schema_version":"1","evidence_id":"evidence:observe","mode":"observe","application_id":"application:finance","intent":"urn:iicp:intent:test:v1","policy_generation":4,"fact_snapshot_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed_at":100,"actual_decision":"deny","proposed_decision":null,"plan_digest":null,"authorization_evidence_digest":null,"policy_boundary":"indeterminate","may_request_apply":true,"extensions":[]},
+      "expected": {"result":"reject","reason":"PROGRESSIVE_AUTHORITY_INVALID_MODE_EVIDENCE"}
+    },
+    {
+      "id": "PA1-RECOMMEND-ACCEPT",
+      "input": {"schema_version":"1","evidence_id":"evidence:recommend","mode":"recommend","application_id":"application:finance","intent":"urn:iicp:intent:test:v1","policy_generation":4,"fact_snapshot_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed_at":100,"actual_decision":"deny","proposed_decision":"allow","plan_digest":null,"authorization_evidence_digest":null,"policy_boundary":"satisfied","may_request_apply":false,"extensions":[]},
+      "expected": {"result":"accept"}
+    },
+    {
+      "id": "PA1-RECOMMEND-PLAN-REJECT",
+      "input": {"schema_version":"1","evidence_id":"evidence:recommend","mode":"recommend","application_id":"application:finance","intent":"urn:iicp:intent:test:v1","policy_generation":4,"fact_snapshot_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed_at":100,"actual_decision":"deny","proposed_decision":"allow","plan_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","authorization_evidence_digest":null,"policy_boundary":"satisfied","may_request_apply":false,"extensions":[]},
+      "expected": {"result":"reject","reason":"PROGRESSIVE_AUTHORITY_INVALID_MODE_EVIDENCE"}
+    },
+    {
+      "id": "PA1-CONFIRM-ACCEPT",
+      "input": {"schema_version":"1","evidence_id":"evidence:confirm","mode":"confirm","application_id":"application:finance","intent":"urn:iicp:intent:test:v1","policy_generation":4,"fact_snapshot_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed_at":100,"actual_decision":null,"proposed_decision":"allow","plan_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","authorization_evidence_digest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","policy_boundary":"satisfied","may_request_apply":true,"extensions":[]},
+      "expected": {"result":"accept"}
+    },
+    {
+      "id": "PA1-CONFIRM-NO-AUTH-REJECT",
+      "input": {"schema_version":"1","evidence_id":"evidence:confirm","mode":"confirm","application_id":"application:finance","intent":"urn:iicp:intent:test:v1","policy_generation":4,"fact_snapshot_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed_at":100,"actual_decision":null,"proposed_decision":"allow","plan_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","authorization_evidence_digest":null,"policy_boundary":"satisfied","may_request_apply":true,"extensions":[]},
+      "expected": {"result":"reject","reason":"PROGRESSIVE_AUTHORITY_APPLY_NOT_AUTHORIZED"}
+    },
+    {
+      "id": "PA1-AUTOMATIC-ACCEPT",
+      "input": {"schema_version":"1","evidence_id":"evidence:auto","mode":"automatic_within_policy","application_id":"application:finance","intent":"urn:iicp:intent:test:v1","policy_generation":4,"fact_snapshot_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed_at":100,"actual_decision":null,"proposed_decision":"allow","plan_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","authorization_evidence_digest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","policy_boundary":"satisfied","may_request_apply":true,"extensions":[]},
+      "expected": {"result":"accept"}
+    },
+    {
+      "id": "PA1-AUTOMATIC-BOUNDARY-REJECT",
+      "input": {"schema_version":"1","evidence_id":"evidence:auto","mode":"automatic_within_policy","application_id":"application:finance","intent":"urn:iicp:intent:test:v1","policy_generation":4,"fact_snapshot_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed_at":100,"actual_decision":null,"proposed_decision":"allow","plan_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","authorization_evidence_digest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","policy_boundary":"failed","may_request_apply":true,"extensions":[]},
+      "expected": {"result":"reject","reason":"PROGRESSIVE_AUTHORITY_POLICY_BOUNDARY_NOT_SATISFIED"}
+    },
+    {
+      "id": "PA1-MALFORMED-DIGEST-REJECT",
+      "input": {"schema_version":"1","evidence_id":"evidence:observe","mode":"observe","application_id":"application:finance","intent":"urn:iicp:intent:test:v1","policy_generation":4,"fact_snapshot_digest":"sha256:bad","observed_at":100,"actual_decision":"deny","proposed_decision":null,"plan_digest":null,"authorization_evidence_digest":null,"policy_boundary":"indeterminate","may_request_apply":false,"extensions":[]},
+      "expected": {"result":"reject","reason":"PROGRESSIVE_AUTHORITY_INVALID_DIGEST"}
+    },
+    {
+      "id": "PA1-REQUIRED-EXTENSION-REJECT",
+      "input": {"schema_version":"1","evidence_id":"evidence:observe","mode":"observe","application_id":"application:finance","intent":"urn:iicp:intent:test:v1","policy_generation":4,"fact_snapshot_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed_at":100,"actual_decision":"deny","proposed_decision":null,"plan_digest":null,"authorization_evidence_digest":null,"policy_boundary":"indeterminate","may_request_apply":false,"extensions":[{"id":"urn:iicp:extension:future","class":"REQUIRED_SECURITY_CRITICAL"}]},
+      "expected": {"result":"reject","reason":"PROGRESSIVE_AUTHORITY_UNSUPPORTED_REQUIRED_EXTENSION:urn:iicp:extension:future"}
+    },
+    {
+      "id": "PA1-STALE-GENERATION-REJECT",
+      "operation": "validate_generation",
+      "current_policy_generation": 5,
+      "input": {"schema_version":"1","evidence_id":"evidence:observe","mode":"observe","application_id":"application:finance","intent":"urn:iicp:intent:test:v1","policy_generation":4,"fact_snapshot_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observed_at":100,"actual_decision":"deny","proposed_decision":null,"plan_digest":null,"authorization_evidence_digest":null,"policy_boundary":"indeterminate","may_request_apply":false,"extensions":[]},
+      "expected": {"result":"reject","reason":"PROGRESSIVE_AUTHORITY_STALE_POLICY_GENERATION"}
+    }
+  ]
+}
