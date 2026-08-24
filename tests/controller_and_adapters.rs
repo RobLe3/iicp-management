@@ -219,7 +219,10 @@ fn headless_controller_transcript_is_owner_only_and_restart_safe() {
     let key = SigningKey::from_bytes(&[10; 32]);
     std::fs::write(&public_key, key.verifying_key().to_bytes()).unwrap();
     let now = Controller::now();
-    let signed = request(&key, "cli-transcript", 0, now);
+    let direct_apply = request(&key, "legacy-apply", 0, now);
+    let mut signed = request(&key, "cli-transcript", 0, now);
+    signed.action = "observe".into();
+    sign_request(&key, &mut signed);
 
     let start = || {
         Command::new(env!("CARGO_BIN_EXE_iicp-management-controller"))
@@ -257,6 +260,9 @@ fn headless_controller_transcript_is_owner_only_and_restart_safe() {
         std::fs::metadata(&socket).unwrap().permissions().mode() & 0o777,
         0o600
     );
+    let direct = transact(&direct_apply);
+    assert_eq!(direct["decision"], "rejected");
+    assert_eq!(direct["reason"], "REQUEST_APPLY_GATE_REQUIRED");
     assert_eq!(transact(&signed)["decision"], "accepted");
     child.kill().unwrap();
     child.wait().unwrap();
@@ -289,7 +295,8 @@ fn authorized(mut operation: AdapterOperation, now: u64) -> AuthorizedAdapterOpe
     let directory = tempfile::tempdir().unwrap();
     let key = SigningKey::from_bytes(&[44; 32]);
     let mut controller_policy = policy(now);
-    controller_policy.allowed_actions = BTreeSet::from([operation.action.clone()]);
+    controller_policy.allowed_actions =
+        BTreeSet::from([operation.action.clone(), "observe".into()]);
     controller_policy.high_impact_actions = controller_policy.allowed_actions.clone();
     let mut controller = Controller::open(
         &directory.path().join("controller.db"),
@@ -297,7 +304,20 @@ fn authorized(mut operation: AdapterOperation, now: u64) -> AuthorizedAdapterOpe
         key.verifying_key().to_bytes(),
     )
     .unwrap();
-    let mut management_request = request(&key, &operation.operation_id, 0, now);
+    for generation in 0..operation.expected_generation {
+        let mut seed = request(&key, &format!("seed:{generation}"), generation, now);
+        seed.action = "observe".into();
+        seed.request_id = format!("seed:{generation}");
+        seed.nonce = format!("seed-nonce:{generation}");
+        sign_request(&key, &mut seed);
+        controller.evaluate(&seed, now).unwrap();
+    }
+    let mut management_request = request(
+        &key,
+        &operation.operation_id,
+        operation.expected_generation,
+        now,
+    );
     management_request.request_id = operation.operation_id.clone();
     management_request.action = operation.action.clone();
     management_request.resource_ids = vec![operation.target_id.clone()];

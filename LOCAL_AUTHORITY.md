@@ -36,6 +36,15 @@ therefore states that no target effect was attempted and convergence was not
 evaluated. Signing, interactive confirmation and target execution remain
 separate authority layers.
 
+The apply gate adds progressive-authority and policy evidence without making a
+presentation mode authoritative. `observe` and `recommend` cannot enter the
+apply path. `confirm` requires an explicit operation identifier from the caller;
+`automatic_within_policy` requires the explicit non-interactive option. Both
+require a satisfied policy boundary and a signed authorization record bound to
+the exact plan, operation, audience, domain, policy generation, fact snapshot
+and expiry. Direct legacy `apply` requests are rejected because they lack this
+context. Other legacy controller actions remain compatible.
+
 Managed adapters expose only bounded capabilities. The initial contract permits
 observation, dry-run, apply, verification and rollback; it does not include an
 arbitrary shell. Each host registration binds one exact target and capability.

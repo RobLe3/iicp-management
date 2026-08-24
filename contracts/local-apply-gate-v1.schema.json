@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/contracts/local-apply-gate-v1.schema.json",
+  "title": "IICP Local Apply Gate v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "request", "plan", "operation",
+    "progressive_authority", "authorization"
+  ],
+  "properties": {
+    "schema_version": { "const": "iicp.management-apply-gate.v1" },
+    "request": { "$ref": "#/$defs/request" },
+    "plan": { "$ref": "#/$defs/plan" },
+    "operation": { "$ref": "#/$defs/adapterOperation" },
+    "progressive_authority": { "$ref": "#/$defs/progressiveAuthority" },
+    "authorization": { "$ref": "#/$defs/authorization" }
+  },
+  "$defs": {
+    "text": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "mode": { "enum": ["confirm", "automatic_within_policy"] },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "request_id", "issuer_id", "audience",
+        "administrative_domain", "action", "resource_ids", "payload_digest",
+        "plan_digest", "expected_generation", "issued_at", "expires_at", "nonce",
+        "signature_profile", "signature"
+      ],
+      "properties": {
+        "schema_version": { "const": "1" },
+        "request_id": { "$ref": "#/$defs/text" },
+        "issuer_id": { "$ref": "#/$defs/text" },
+        "audience": { "$ref": "#/$defs/text" },
+        "administrative_domain": { "$ref": "#/$defs/text" },
+        "action": { "const": "apply" },
+        "resource_ids": { "type": "array", "minItems": 1, "maxItems": 1, "items": { "$ref": "#/$defs/text" } },
+        "payload_digest": { "$ref": "#/$defs/digest" },
+        "plan_digest": { "$ref": "#/$defs/digest" },
+        "expected_generation": { "type": "integer", "minimum": 0 },
+        "issued_at": { "type": "integer", "minimum": 0 },
+        "expires_at": { "type": "integer", "minimum": 0 },
+        "nonce": { "$ref": "#/$defs/text" },
+        "signature_profile": { "const": "ed25519-jcs-v1" },
+        "signature": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "planOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id", "resource_id", "action", "before_digest", "after_digest", "expected_generation", "target_generation", "idempotency_key"],
+      "properties": {
+        "operation_id": { "$ref": "#/$defs/text" },
+        "resource_id": { "$ref": "#/$defs/text" },
+        "action": { "$ref": "#/$defs/text" },
+        "before_digest": { "$ref": "#/$defs/digest" },
+        "after_digest": { "$ref": "#/$defs/digest" },
+        "expected_generation": { "type": "integer", "minimum": 0 },
+        "target_generation": { "type": "integer", "minimum": 1 },
+        "idempotency_key": { "$ref": "#/$defs/text" }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "planner_version", "bundle_id", "bundle_digest", "expected_generation", "target_generation", "operations"],
+      "properties": {
+        "schema_version": { "const": "1" },
+        "planner_version": { "$ref": "#/$defs/text" },
+        "bundle_id": { "$ref": "#/$defs/text" },
+        "bundle_digest": { "$ref": "#/$defs/digest" },
+        "expected_generation": { "type": "integer", "minimum": 0 },
+        "target_generation": { "type": "integer", "minimum": 1 },
+        "operations": { "type": "array", "minItems": 1, "maxItems": 128, "items": { "$ref": "#/$defs/planOperation" } }
+      }
+    },
+    "adapterOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["operation_id", "target_id", "action", "plan_digest", "desired_digest", "expected_generation", "expires_at", "capability", "desired"],
+      "properties": {
+        "operation_id": { "$ref": "#/$defs/text" },
+        "target_id": { "$ref": "#/$defs/text" },
+        "action": { "const": "apply" },
+        "plan_digest": { "$ref": "#/$defs/digest" },
+        "desired_digest": { "$ref": "#/$defs/digest" },
+        "expected_generation": { "type": "integer", "minimum": 0 },
+        "expires_at": { "type": "integer", "minimum": 0 },
+        "capability": { "$ref": "#/$defs/text" },
+        "desired": {},
+        "related_operation_id": { "type": "string" }
+      }
+    },
+    "progressiveAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "evidence_id", "mode", "application_id", "intent", "policy_generation", "fact_snapshot_digest", "observed_at", "actual_decision", "proposed_decision", "plan_digest", "authorization_evidence_digest", "policy_boundary", "may_request_apply", "extensions"],
+      "properties": {
+        "schema_version": { "const": "1" },
+        "evidence_id": { "$ref": "#/$defs/text" },
+        "mode": { "$ref": "#/$defs/mode" },
+        "application_id": { "$ref": "#/$defs/text" },
+        "intent": { "$ref": "#/$defs/text" },
+        "policy_generation": { "type": "integer", "minimum": 0 },
+        "fact_snapshot_digest": { "$ref": "#/$defs/digest" },
+        "observed_at": { "type": "integer", "minimum": 0 },
+        "actual_decision": { "enum": ["allow", "deny", "indeterminate", null] },
+        "proposed_decision": { "const": "allow" },
+        "plan_digest": { "$ref": "#/$defs/digest" },
+        "authorization_evidence_digest": { "$ref": "#/$defs/digest" },
+        "policy_boundary": { "const": "satisfied" },
+        "may_request_apply": { "const": true },
+        "extensions": { "type": "array" }
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "authorization_id", "issuer_id", "audience", "administrative_domain", "mode", "plan_digest", "operation_digest", "policy_generation", "fact_snapshot_digest", "policy_boundary", "proposed_decision", "issued_at", "expires_at", "signature_profile", "signature"],
+      "properties": {
+        "schema_version": { "const": "1" },
+        "authorization_id": { "$ref": "#/$defs/text" },
+        "issuer_id": { "$ref": "#/$defs/text" },
+        "audience": { "$ref": "#/$defs/text" },
+        "administrative_domain": { "$ref": "#/$defs/text" },
+        "mode": { "$ref": "#/$defs/mode" },
+        "plan_digest": { "$ref": "#/$defs/digest" },
+        "operation_digest": { "$ref": "#/$defs/digest" },
+        "policy_generation": { "type": "integer", "minimum": 0 },
+        "fact_snapshot_digest": { "$ref": "#/$defs/digest" },
+        "policy_boundary": { "const": "satisfied" },
+        "proposed_decision": { "const": "allow" },
+        "issued_at": { "type": "integer", "minimum": 0 },
+        "expires_at": { "type": "integer", "minimum": 0 },
+        "signature_profile": { "const": "ed25519-jcs-v1" },
+        "signature": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    }
+  }
+}
