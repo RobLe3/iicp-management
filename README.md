@@ -109,6 +109,29 @@ Missing adapter evidence remains `not_reported`. Observation without a receipt
 is not called convergence, generation disagreement remains visible, and the
 combined projection never carries apply authority.
 
+## Exact local plan submission
+
+`submit-plan` is the first deliberately state-changing operator command. It
+sends a pre-signed `iicp.management-plan-submission.v1` artifact to the existing
+owner-protected local controller endpoint:
+
+```bash
+iicp-management --json submit-plan \
+  /run/user/$(id -u)/iicp-management.sock submission.json
+```
+
+The CLI does not load or create a signing key. The submission binds the exact
+canonical plan digest, desired-state bundle digest, resource identifiers,
+audience, administrative domain, action, generation, expiry and nonce. The
+controller rechecks those bindings before accepting the next generation.
+
+An accepted receipt always reports `target_effect: not_attempted` and
+`convergence: not_evaluated`. Acceptance records controller state only; it does
+not invoke an adapter, alter a target, restart a service or prove convergence.
+Exit status `0` means accepted, `3` means rejected and `5` means deferred.
+Deterministic input or authorization failures are never converted into a
+deferred result.
+
 ## Authority boundary
 
 The contracts do not grant management authority. A future domain-local

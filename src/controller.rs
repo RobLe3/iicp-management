@@ -3,7 +3,7 @@ use crate::{
         validate_adapter_inspection, AdapterInspectionV1, AdapterOperation,
         AuthorizedAdapterOperation,
     },
-    ManagementError,
+    digest, ManagementError, Plan,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
@@ -54,6 +54,60 @@ pub struct ControllerReceipt {
     pub decision: DecisionState,
     pub reason: String,
     pub generation: u64,
+}
+
+pub const PLAN_SUBMISSION_SCHEMA: &str = "iicp.management-plan-submission.v1";
+pub const PLAN_ACCEPT_ACTION: &str = "accept_plan";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LocalPlanSubmissionV1 {
+    pub schema_version: String,
+    pub request: ManagementRequest,
+    pub plan: Plan,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PlanSubmissionReceiptV1 {
+    pub schema_version: String,
+    pub request_id: String,
+    pub decision: DecisionState,
+    pub reason: String,
+    pub controller_generation: Option<u64>,
+    pub target_effect: String,
+    pub convergence: String,
+}
+
+impl PlanSubmissionReceiptV1 {
+    pub fn from_controller(receipt: ControllerReceipt) -> Self {
+        Self {
+            schema_version: PLAN_SUBMISSION_SCHEMA.into(),
+            request_id: receipt.request_id,
+            decision: receipt.decision,
+            reason: receipt.reason,
+            controller_generation: Some(receipt.generation),
+            target_effect: "not_attempted".into(),
+            convergence: "not_evaluated".into(),
+        }
+    }
+
+    pub fn failure(
+        request_id: impl Into<String>,
+        decision: DecisionState,
+        reason: impl Into<String>,
+        generation: Option<u64>,
+    ) -> Self {
+        Self {
+            schema_version: PLAN_SUBMISSION_SCHEMA.into(),
+            request_id: request_id.into(),
+            decision,
+            reason: reason.into(),
+            controller_generation: generation,
+            target_effect: "not_attempted".into(),
+            convergence: "not_evaluated".into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -393,6 +447,15 @@ impl Controller {
             AuthorizedAdapterOperation::from_controller(operation),
         ))
     }
+    pub fn accept_plan_submission(
+        &mut self,
+        submission: &LocalPlanSubmissionV1,
+        now: u64,
+    ) -> Result<PlanSubmissionReceiptV1, ControllerError> {
+        validate_plan_submission(submission)?;
+        self.evaluate(&submission.request, now)
+            .map(PlanSubmissionReceiptV1::from_controller)
+    }
     fn evaluate_authorized(
         &mut self,
         request: &ManagementRequest,
@@ -503,4 +566,39 @@ impl Controller {
             .unwrap_or_default()
             .as_secs()
     }
+}
+
+pub fn validate_plan_submission(submission: &LocalPlanSubmissionV1) -> Result<(), ControllerError> {
+    if submission.schema_version != PLAN_SUBMISSION_SCHEMA
+        || submission.request.action != PLAN_ACCEPT_ACTION
+        || submission.plan.schema_version != "1"
+        || submission.plan.operations.is_empty()
+        || submission.plan.target_generation
+            != submission.plan.expected_generation.saturating_add(1)
+        || submission.request.expected_generation != submission.plan.expected_generation
+        || submission.request.plan_digest
+            != digest(&submission.plan).map_err(ControllerError::Core)?
+        || submission.request.payload_digest != submission.plan.bundle_digest
+    {
+        return Err(ControllerError::Invalid("plan_binding"));
+    }
+    let resources = submission
+        .plan
+        .operations
+        .iter()
+        .map(|operation| operation.resource_id.clone())
+        .collect::<BTreeSet<_>>();
+    if resources.len() != submission.plan.operations.len()
+        || submission.request.resource_ids != resources.into_iter().collect::<Vec<_>>()
+        || submission.plan.operations.iter().any(|operation| {
+            operation.expected_generation != submission.plan.expected_generation
+                || operation.target_generation != submission.plan.target_generation
+                || operation.action.is_empty()
+                || operation.operation_id.is_empty()
+                || operation.resource_id.is_empty()
+        })
+    {
+        return Err(ControllerError::Invalid("plan_binding"));
+    }
+    Ok(())
 }

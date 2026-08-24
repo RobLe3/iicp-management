@@ -31,3 +31,4 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --locked --bin iicp-management-controller
       - run: cargo test --locked --test controller_and_adapters
+      - run: cargo test --locked --test plan_submission

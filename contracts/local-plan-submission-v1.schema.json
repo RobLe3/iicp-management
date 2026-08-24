@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/contracts/local-plan-submission-v1.schema.json",
+  "title": "IICP Local Plan Submission v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request", "plan"],
+  "properties": {
+    "schema_version": { "const": "iicp.management-plan-submission.v1" },
+    "request": { "$ref": "#/$defs/request" },
+    "plan": { "$ref": "#/$defs/plan" }
+  },
+  "$defs": {
+    "boundedText": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "request_id", "issuer_id", "audience",
+        "administrative_domain", "action", "resource_ids", "payload_digest",
+        "plan_digest", "expected_generation", "issued_at", "expires_at", "nonce",
+        "signature_profile", "signature"
+      ],
+      "properties": {
+        "schema_version": { "const": "1" },
+        "request_id": { "$ref": "#/$defs/boundedText" },
+        "issuer_id": { "$ref": "#/$defs/boundedText" },
+        "audience": { "$ref": "#/$defs/boundedText" },
+        "administrative_domain": { "$ref": "#/$defs/boundedText" },
+        "action": { "const": "accept_plan" },
+        "resource_ids": {
+          "type": "array", "minItems": 1, "maxItems": 128,
+          "uniqueItems": true, "items": { "$ref": "#/$defs/boundedText" }
+        },
+        "payload_digest": { "$ref": "#/$defs/boundedText" },
+        "plan_digest": { "$ref": "#/$defs/boundedText" },
+        "expected_generation": { "type": "integer", "minimum": 0 },
+        "issued_at": { "type": "integer", "minimum": 0 },
+        "expires_at": { "type": "integer", "minimum": 0 },
+        "nonce": { "$ref": "#/$defs/boundedText" },
+        "signature_profile": { "const": "ed25519-jcs-v1" },
+        "signature": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "operation_id", "resource_id", "action", "before_digest", "after_digest",
+        "expected_generation", "target_generation", "idempotency_key"
+      ],
+      "properties": {
+        "operation_id": { "$ref": "#/$defs/boundedText" },
+        "resource_id": { "$ref": "#/$defs/boundedText" },
+        "action": { "$ref": "#/$defs/boundedText" },
+        "before_digest": { "$ref": "#/$defs/boundedText" },
+        "after_digest": { "$ref": "#/$defs/boundedText" },
+        "expected_generation": { "type": "integer", "minimum": 0 },
+        "target_generation": { "type": "integer", "minimum": 1 },
+        "idempotency_key": { "$ref": "#/$defs/boundedText" }
+      }
+    },
+    "plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "planner_version", "bundle_id", "bundle_digest",
+        "expected_generation", "target_generation", "operations"
+      ],
+      "properties": {
+        "schema_version": { "const": "1" },
+        "planner_version": { "$ref": "#/$defs/boundedText" },
+        "bundle_id": { "$ref": "#/$defs/boundedText" },
+        "bundle_digest": { "$ref": "#/$defs/boundedText" },
+        "expected_generation": { "type": "integer", "minimum": 0 },
+        "target_generation": { "type": "integer", "minimum": 1 },
+        "operations": {
+          "type": "array", "minItems": 1, "maxItems": 128,
+          "items": { "$ref": "#/$defs/operation" }
+        }
+      }
+    }
+  }
+}
