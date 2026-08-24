@@ -18,6 +18,10 @@ use iicp_management_core::{
     progressive_authority::{
         OperatingMode, PolicyBoundaryAssessment, ProgressiveAuthorityEvidenceV1,
     },
+    recovery::{
+        execute_recovery, validate_recovery_gate, LocalRecoveryGateV1, RecoveryOutcome,
+        RecoveryStrategy, RECOVERY_SCHEMA,
+    },
     Operation, Plan, PolicyDecision, PLANNER_VERSION,
 };
 use std::collections::BTreeSet;
@@ -235,10 +239,20 @@ fn policy(now: u64) -> ControllerPolicy {
     ControllerPolicy {
         audience: "controller:test".into(),
         domain: "domain:test".into(),
-        allowed_actions: BTreeSet::from(["apply".into()]),
+        allowed_actions: BTreeSet::from([
+            "apply".into(),
+            "rollback".into(),
+            "compensate".into(),
+            "safe".into(),
+        ]),
         revocation_checkpoint: now,
         max_checkpoint_age: 3600,
-        high_impact_actions: BTreeSet::from(["apply".into()]),
+        high_impact_actions: BTreeSet::from([
+            "apply".into(),
+            "rollback".into(),
+            "compensate".into(),
+            "safe".into(),
+        ]),
         max_decision_events: 100,
     }
 }
@@ -494,4 +508,86 @@ fn confirmed_cli_request_is_authorized_over_ipc_without_target_execution() {
     assert_eq!(receipt["convergence"], "not_evaluated");
     server.kill().unwrap();
     server.wait().unwrap();
+}
+
+#[test]
+fn exact_recovery_requires_fresh_authority_and_verifies_previous_state() {
+    let now = 1_700_000_000;
+    let key = SigningKey::from_bytes(&[91; 32]);
+    let dir = tempfile::tempdir().unwrap();
+    let mut original = gate(&key, OperatingMode::Confirm, now);
+    original.plan.operations[0].before_digest = digest(&serde_json::Value::Null).unwrap();
+    original.request.plan_digest = digest(&original.plan).unwrap();
+    original.operation.plan_digest = original.request.plan_digest.clone();
+    original.authorization.plan_digest = original.request.plan_digest.clone();
+    original.authorization.operation_digest = digest(&original.operation).unwrap();
+    sign_authorization(&key, &mut original.authorization);
+    original.progressive_authority.plan_digest = Some(original.request.plan_digest.clone());
+    original.progressive_authority.authorization_evidence_digest =
+        Some(digest(&original.authorization).unwrap());
+    sign_request(&key, &mut original.request);
+
+    let mut controller = controller_at_generation_one(&dir.path().join("controller.db"), &key, now);
+    controller.authorize_apply_gate(&original, now).unwrap();
+    let mut adapter = SyntheticAdapter::new();
+    adapter.generation = 1;
+    let mut host = AdapterHost::new();
+    host.register("target:finance", "synthetic-v1", Box::new(adapter));
+    let execution = LocalApplyExecutionV1 {
+        schema_version: EXECUTION_SCHEMA.into(),
+        gate: original.clone(),
+    };
+    let applied = execute_authorized(&controller, &mut host, &execution, now).unwrap();
+    assert_eq!(applied.state, ExecutionState::Converged);
+
+    let recovery_context_digest = digest(&(&original, &applied)).unwrap();
+    let operation = AdapterOperation {
+        operation_id: "recovery:finance".into(),
+        target_id: "target:finance".into(),
+        action: "rollback".into(),
+        plan_digest: recovery_context_digest.clone(),
+        desired_digest: original.plan.operations[0].before_digest.clone(),
+        expected_generation: applied.adapter_receipt.as_ref().unwrap().generation,
+        expires_at: now + 60,
+        capability: "synthetic-v1".into(),
+        desired: serde_json::Value::Null,
+        related_operation_id: Some(original.operation.operation_id.clone()),
+    };
+    let mut authorization = original.authorization.clone();
+    authorization.authorization_id = "authorization:recovery".into();
+    authorization.plan_digest = recovery_context_digest.clone();
+    authorization.operation_digest = digest(&operation).unwrap();
+    authorization.signature.clear();
+    sign_authorization(&key, &mut authorization);
+    let mut authority = original.progressive_authority.clone();
+    authority.evidence_id = "evidence:recovery".into();
+    authority.plan_digest = Some(recovery_context_digest.clone());
+    authority.authorization_evidence_digest = Some(digest(&authorization).unwrap());
+    let mut request = original.request.clone();
+    request.request_id = operation.operation_id.clone();
+    request.action = "rollback".into();
+    request.plan_digest = recovery_context_digest;
+    request.payload_digest = operation.desired_digest.clone();
+    request.expected_generation = 2;
+    request.nonce = "nonce:recovery".into();
+    request.signature.clear();
+    sign_request(&key, &mut request);
+    let recovery = LocalRecoveryGateV1 {
+        schema_version: RECOVERY_SCHEMA.into(),
+        request,
+        original_gate: original,
+        original_execution: applied,
+        operation,
+        strategy: RecoveryStrategy::ExactReversal,
+        progressive_authority: authority,
+        authorization,
+    };
+    let mut strategy_tamper = recovery.clone();
+    strategy_tamper.strategy = RecoveryStrategy::Compensation;
+    assert!(validate_recovery_gate(&strategy_tamper, now).is_err());
+    controller.authorize_recovery_gate(&recovery, now).unwrap();
+    let receipt = execute_recovery(&controller, &mut host, &recovery, now).unwrap();
+    assert_eq!(receipt.outcome, RecoveryOutcome::Reversed);
+    assert_eq!(receipt.safe_next_action, "NONE");
+    assert!(receipt.verification_receipt.is_some());
 }

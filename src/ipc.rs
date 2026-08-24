@@ -2,6 +2,7 @@ use crate::apply_gate::LocalApplyGateV1;
 use crate::controller::ApplyAuthorizationReceiptV1;
 use crate::controller::{LocalPlanSubmissionV1, PlanSubmissionReceiptV1};
 use crate::execution::{ApplyLifecycleReceiptV1, LocalApplyExecutionV1};
+use crate::recovery::{LocalRecoveryExecutionV1, LocalRecoveryGateV1, RecoveryLifecycleReceiptV1};
 use std::{
     io::{BufRead, BufReader, Read, Write},
     path::Path,
@@ -62,6 +63,39 @@ pub fn execute_apply(
     exchange(&mut stream, execution)
 }
 
+#[cfg(any(unix, windows))]
+pub fn request_recovery(
+    endpoint: &Path,
+    gate: &LocalRecoveryGateV1,
+) -> Result<ApplyAuthorizationReceiptV1, String> {
+    platform_exchange(endpoint, gate)
+}
+
+#[cfg(any(unix, windows))]
+pub fn execute_recovery(
+    endpoint: &Path,
+    execution: &LocalRecoveryExecutionV1,
+) -> Result<RecoveryLifecycleReceiptV1, String> {
+    platform_exchange(endpoint, execution)
+}
+
+#[cfg(any(unix, windows))]
+fn platform_exchange<Q: serde::Serialize, R: serde::de::DeserializeOwned>(
+    endpoint: &Path,
+    value: &Q,
+) -> Result<R, String> {
+    #[cfg(unix)]
+    let mut stream = std::os::unix::net::UnixStream::connect(endpoint)
+        .map_err(|_| "IPC_CONNECT_FAILED".to_string())?;
+    #[cfg(windows)]
+    let mut stream = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(endpoint)
+        .map_err(|_| "IPC_CONNECT_FAILED".to_string())?;
+    exchange(&mut stream, value)
+}
+
 #[cfg(windows)]
 pub fn submit_plan(
     endpoint: &Path,
@@ -105,6 +139,22 @@ pub fn execute_apply(
     _: &Path,
     _: &LocalApplyExecutionV1,
 ) -> Result<ApplyLifecycleReceiptV1, String> {
+    Err("IPC_UNSUPPORTED_PLATFORM".into())
+}
+
+#[cfg(not(any(unix, windows)))]
+pub fn request_recovery(
+    _: &Path,
+    _: &LocalRecoveryGateV1,
+) -> Result<ApplyAuthorizationReceiptV1, String> {
+    Err("IPC_UNSUPPORTED_PLATFORM".into())
+}
+
+#[cfg(not(any(unix, windows)))]
+pub fn execute_recovery(
+    _: &Path,
+    _: &LocalRecoveryExecutionV1,
+) -> Result<RecoveryLifecycleReceiptV1, String> {
     Err("IPC_UNSUPPORTED_PLATFORM".into())
 }
 

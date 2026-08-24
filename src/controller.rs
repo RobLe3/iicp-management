@@ -6,7 +6,9 @@ use crate::{
     apply_gate::{
         authorization_signing_bytes, validate_apply_gate, LocalApplyGateV1, APPLY_GATE_SCHEMA,
     },
-    digest, ManagementError, Plan,
+    digest,
+    recovery::{validate_recovery_gate, LocalRecoveryGateV1},
+    ManagementError, Plan,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
@@ -593,6 +595,47 @@ impl Controller {
             AuthorizedAdapterOperation::from_controller(gate.operation.clone()),
         ))
     }
+    pub fn authorize_recovery_gate(
+        &mut self,
+        gate: &LocalRecoveryGateV1,
+        now: u64,
+    ) -> Result<(ApplyAuthorizationReceiptV1, AuthorizedAdapterOperation), ControllerError> {
+        validate_recovery_gate(gate, now).map_err(|_| ControllerError::ApplyGate)?;
+        self.verify_authorization_signature(&gate.authorization)?;
+        let operation_digest = digest(&gate.operation).map_err(ControllerError::Core)?;
+        let authority_context_digest =
+            digest(&gate.authorization).map_err(ControllerError::Core)?;
+        let receipt = self.evaluate_authorized(
+            &gate.request,
+            now,
+            Some(ApplyAuthorizationBinding {
+                operation_digest: operation_digest.clone(),
+                authority_context_digest: authority_context_digest.clone(),
+            }),
+        )?;
+        Ok((
+            ApplyAuthorizationReceiptV1::from_controller(
+                receipt,
+                operation_digest,
+                authority_context_digest,
+            ),
+            AuthorizedAdapterOperation::from_controller(gate.operation.clone()),
+        ))
+    }
+    pub fn resume_authorized_recovery(
+        &self,
+        gate: &LocalRecoveryGateV1,
+        now: u64,
+    ) -> Result<(ApplyAuthorizationReceiptV1, AuthorizedAdapterOperation), ControllerError> {
+        validate_recovery_gate(gate, now).map_err(|_| ControllerError::ApplyGate)?;
+        self.verify_request_signature(&gate.request)?;
+        self.verify_authorization_signature(&gate.authorization)?;
+        self.resume_bound_operation(
+            &gate.request.request_id,
+            &gate.operation,
+            &gate.authorization,
+        )
+    }
     pub fn accept_plan_submission(
         &mut self,
         submission: &LocalPlanSubmissionV1,
@@ -612,6 +655,51 @@ impl Controller {
         self.verifying_key
             .verify(&Self::signing_bytes(request)?, &signature)
             .map_err(|_| ControllerError::Signature)
+    }
+    fn verify_authorization_signature(
+        &self,
+        authorization: &crate::apply_gate::ApplyAuthorizationEvidenceV1,
+    ) -> Result<(), ControllerError> {
+        let signature = Signature::from_slice(
+            &STANDARD
+                .decode(&authorization.signature)
+                .map_err(|_| ControllerError::Signature)?,
+        )
+        .map_err(|_| ControllerError::Signature)?;
+        self.verifying_key
+            .verify(
+                &authorization_signing_bytes(authorization)
+                    .map_err(|_| ControllerError::ApplyGate)?,
+                &signature,
+            )
+            .map_err(|_| ControllerError::Signature)
+    }
+    fn resume_bound_operation(
+        &self,
+        request_id: &str,
+        operation: &AdapterOperation,
+        authorization: &crate::apply_gate::ApplyAuthorizationEvidenceV1,
+    ) -> Result<(ApplyAuthorizationReceiptV1, AuthorizedAdapterOperation), ControllerError> {
+        let expected_operation = digest(operation).map_err(ControllerError::Core)?;
+        let expected_context = digest(authorization).map_err(ControllerError::Core)?;
+        let stored = self.connection.query_row(
+            "SELECT operation_digest,authority_context_digest,accepted_generation FROM apply_authorizations WHERE request_id=?1",
+            [request_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, u64>(2)?)),
+        ).optional().map_err(|_| ControllerError::Storage)?.ok_or(ControllerError::ApplyGate)?;
+        if stored.0 != expected_operation || stored.1 != expected_context {
+            return Err(ControllerError::ApplyGate);
+        }
+        let receipt = ControllerReceipt {
+            request_id: request_id.into(),
+            decision: DecisionState::Accepted,
+            reason: "AUTHORIZED".into(),
+            generation: stored.2,
+        };
+        Ok((
+            ApplyAuthorizationReceiptV1::from_controller(receipt, stored.0, stored.1),
+            AuthorizedAdapterOperation::from_controller(operation.clone()),
+        ))
     }
     fn evaluate_authorized(
         &mut self,

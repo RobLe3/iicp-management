@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/contracts/local-recovery-v1.schema.json",
+  "title": "IICP Local Recovery v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request", "original_gate", "original_execution", "operation", "strategy", "progressive_authority", "authorization"],
+  "properties": {
+    "schema_version": { "const": "iicp.management-local-recovery.v1" },
+    "request": { "type": "object" },
+    "original_gate": { "$ref": "local-apply-gate-v1.schema.json" },
+    "original_execution": { "type": "object" },
+    "operation": { "type": "object" },
+    "strategy": { "enum": ["exact_reversal", "compensation", "safing"] },
+    "progressive_authority": { "type": "object" },
+    "authorization": { "type": "object" }
+  }
+}
