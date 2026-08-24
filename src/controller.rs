@@ -1,5 +1,8 @@
 use crate::{
-    adapters::{AdapterOperation, AuthorizedAdapterOperation},
+    adapters::{
+        validate_adapter_inspection, AdapterInspectionV1, AdapterOperation,
+        AuthorizedAdapterOperation,
+    },
     ManagementError,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -71,6 +74,68 @@ pub struct ControllerSnapshot {
     pub recent_decisions: Vec<DecisionRecord>,
     pub adapter_capabilities: Vec<String>,
     pub target_state: String,
+    pub accepted_state: String,
+    pub observed_state: String,
+    pub effective_state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adapter_inspection: Option<AdapterInspectionV1>,
+}
+
+pub fn attach_adapter_inspection(
+    mut snapshot: ControllerSnapshot,
+    inspection: AdapterInspectionV1,
+    now: u64,
+) -> Result<ControllerSnapshot, ControllerError> {
+    validate_adapter_inspection(&inspection, &BTreeSet::new(), now, 60)
+        .map_err(|_| ControllerError::Invalid("adapter_inspection"))?;
+    snapshot.adapter_capabilities = inspection
+        .entries
+        .iter()
+        .flat_map(|entry| entry.advertised_capabilities.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    let states = inspection
+        .entries
+        .iter()
+        .filter_map(|entry| entry.convergence_state.clone())
+        .collect::<Vec<_>>();
+    snapshot.observed_state = if inspection.entries.is_empty() {
+        "no_registered_adapters"
+    } else if inspection
+        .entries
+        .iter()
+        .any(|entry| entry.reason_code == "ADAPTER_OBSERVATION_FAILED")
+    {
+        "observation_failed"
+    } else if states.len() != inspection.entries.len() {
+        "observed_without_convergence_receipt"
+    } else if states
+        .iter()
+        .all(|state| *state == crate::ConvergenceState::Converged)
+    {
+        "converged"
+    } else if states
+        .iter()
+        .all(|state| *state == crate::ConvergenceState::Failed)
+    {
+        "failed"
+    } else {
+        "partially_converged"
+    }
+    .into();
+    snapshot.effective_state = if inspection.entries.iter().any(|entry| {
+        entry
+            .observed_generation
+            .is_some_and(|generation| generation != snapshot.generation)
+    }) {
+        "generation_mismatch".into()
+    } else {
+        snapshot.observed_state.clone()
+    };
+    snapshot.target_state = snapshot.observed_state.clone();
+    snapshot.adapter_inspection = Some(inspection);
+    Ok(snapshot)
 }
 
 pub fn inspect_controller_database(
@@ -116,6 +181,10 @@ pub fn inspect_controller_database(
         recent_decisions,
         adapter_capabilities: Vec::new(),
         target_state: "not_reported_by_controller_store".into(),
+        accepted_state: format!("generation:{generation}"),
+        observed_state: "not_reported".into(),
+        effective_state: "not_computed".into(),
+        adapter_inspection: None,
     })
 }
 

@@ -49,3 +49,18 @@ configuration files only; it does not start, stop or restart services.
 
 This foundation is for disposable and local evidence. It is not a remote
 administration endpoint or production deployment authorization.
+
+## Read-only inspection
+
+The controller database inspection path uses SQLite read-only mode and reports
+accepted generation plus bounded decision history. Adapter capability and
+target evidence remain adapter-owned. An adapter host may produce the
+`adapter-inspection-v1` artifact, which contains descriptor and observation
+digests rather than raw configuration. A completed adapter receipt is required
+before the combined view reports convergence.
+
+The CLI validates freshness, identifiers, unique target/capability bindings,
+digest shape and required extensions before combining the two evidence sources.
+A missing or failed observation remains explicit. The combined snapshot is a
+local diagnostic artifact with `authorizes_mutation: false`; it is not an
+approval, execution receipt or remote-management credential.

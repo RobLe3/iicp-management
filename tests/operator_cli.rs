@@ -117,4 +117,65 @@ fn controller_inspection_is_read_only() {
     assert_eq!(value["authorizes_mutation"], false);
     assert_eq!(value["target_state"], "not_reported_by_controller_store");
     assert_eq!(before, fs::read(&database).unwrap());
+
+    let now = Controller::now();
+    let adapter = directory.path().join("adapter.json");
+    fs::write(
+        &adapter,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schema_version":"1",
+            "evidence_class":"adapter_host_observation",
+            "evidence_source":"domain_local_adapter_host",
+            "authorizes_mutation":false,
+            "observed_at":now,
+            "expires_at":now+60,
+            "entries":[{
+                "target_id":"target:test",
+                "registered_capability":"synthetic-v1",
+                "advertised_capabilities":["synthetic-v1"],
+                "descriptor_digest":format!("sha256:{}", "a".repeat(64)),
+                "observation_digest":format!("sha256:{}", "b".repeat(64)),
+                "observed_generation":0,
+                "convergence_state":"converged",
+                "reason_code":"ADAPTER_RECEIPT_REPORTED"
+            }],
+            "extensions":[]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let combined = cli()
+        .args([
+            "--json",
+            "controller",
+            "status",
+            database.to_str().unwrap(),
+            adapter.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(combined.status.success());
+    let value: Value = serde_json::from_slice(&combined.stdout).unwrap();
+    assert_eq!(value["observed_state"], "converged");
+    assert_eq!(value["effective_state"], "converged");
+    assert_eq!(value["adapter_capabilities"][0], "synthetic-v1");
+    assert_eq!(before, fs::read(&database).unwrap());
+
+    let mut mismatched: Value = serde_json::from_slice(&fs::read(&adapter).unwrap()).unwrap();
+    mismatched["entries"][0]["observed_generation"] = Value::from(1);
+    fs::write(&adapter, serde_json::to_vec_pretty(&mismatched).unwrap()).unwrap();
+    let combined = cli()
+        .args([
+            "--json",
+            "controller",
+            "status",
+            database.to_str().unwrap(),
+            adapter.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(combined.status.success());
+    let value: Value = serde_json::from_slice(&combined.stdout).unwrap();
+    assert_eq!(value["effective_state"], "generation_mismatch");
+    assert_eq!(before, fs::read(&database).unwrap());
 }

@@ -62,3 +62,18 @@ that confirmation requires exact plan and authorization evidence, and that
 automatic operation fails unless the policy boundary is satisfied. The
 projection is not an execution receipt. Passing it grants no management
 authority and does not prove that an apply occurred.
+
+## Adapter inspection profile
+
+The adapter-inspection pack covers bounded capability advertisement,
+observation digests, freshness, convergence receipts, duplicate bindings and
+unknown required extensions:
+
+```bash
+python3 tools/run_adapter_inspection_conformance.py \
+  fixtures/adapter-inspection-conformance-v1.json
+```
+
+The artifact carries no raw target state and cannot authorize mutation. A
+successful observation without an adapter receipt is not convergence. The Rust
+and standard-library Python validators consume the same seven cases.

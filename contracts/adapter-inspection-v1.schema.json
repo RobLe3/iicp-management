@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/schemas/management/adapter-inspection-v1.schema.json",
+  "title": "IICP Adapter Inspection v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version","evidence_class","evidence_source","authorizes_mutation","observed_at","expires_at","entries","extensions"],
+  "properties": {
+    "schema_version": {"const":"1"},
+    "evidence_class": {"const":"adapter_host_observation"},
+    "evidence_source": {"const":"domain_local_adapter_host"},
+    "authorizes_mutation": {"const":false},
+    "observed_at": {"type":"integer","minimum":0},
+    "expires_at": {"type":"integer","minimum":0},
+    "entries": {"type":"array","maxItems":1024,"items":{"$ref":"#/$defs/entry"}},
+    "extensions": {"type":"array","items":{"$ref":"#/$defs/extension"}}
+  },
+  "$defs": {
+    "digest": {"type":"string","pattern":"^sha256:[0-9a-fA-F]{64}$"},
+    "entry": {
+      "type":"object","additionalProperties":false,
+      "required":["target_id","registered_capability","advertised_capabilities","descriptor_digest","reason_code"],
+      "properties": {
+        "target_id":{"type":"string","minLength":1,"maxLength":256},
+        "registered_capability":{"type":"string","minLength":1,"maxLength":256},
+        "advertised_capabilities":{"type":"array","minItems":1,"maxItems":128,"uniqueItems":true,"items":{"type":"string","minLength":1,"maxLength":256}},
+        "descriptor_digest":{"$ref":"#/$defs/digest"},
+        "observation_digest":{"$ref":"#/$defs/digest"},
+        "observed_generation":{"type":"integer","minimum":0},
+        "convergence_state":{"enum":["converged","partially_converged","failed"]},
+        "reason_code":{"type":"string","minLength":1,"maxLength":128}
+      }
+    },
+    "extension": {
+      "type":"object","additionalProperties":false,"required":["id","class"],
+      "properties":{"id":{"type":"string","minLength":1},"class":{"enum":["OPTIONAL_IGNORABLE","OPTIONAL_NEGOTIABLE","REQUIRED_UNDERSTOOD","REQUIRED_SECURITY_CRITICAL"]}}
+    }
+  }
+}

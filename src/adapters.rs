@@ -1,4 +1,4 @@
-use crate::{digest, ConvergenceState};
+use crate::{digest, ConvergenceState, ExtensionClass, ExtensionRequirement};
 use iicp_client::runtime_config::RuntimeConfigV1;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -52,6 +52,101 @@ pub struct AdapterReceipt {
     pub result_digest: String,
     pub reason: String,
 }
+
+pub const ADAPTER_INSPECTION_VERSION: &str = "1";
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct AdapterInspectionEntryV1 {
+    pub target_id: String,
+    pub registered_capability: String,
+    pub advertised_capabilities: Vec<String>,
+    pub descriptor_digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observation_digest: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub observed_generation: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub convergence_state: Option<ConvergenceState>,
+    pub reason_code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct AdapterInspectionV1 {
+    pub schema_version: String,
+    pub evidence_class: String,
+    pub evidence_source: String,
+    pub authorizes_mutation: bool,
+    pub observed_at: u64,
+    pub expires_at: u64,
+    pub entries: Vec<AdapterInspectionEntryV1>,
+    #[serde(default)]
+    pub extensions: Vec<ExtensionRequirement>,
+}
+
+pub fn validate_adapter_inspection(
+    value: &AdapterInspectionV1,
+    supported_extensions: &BTreeSet<String>,
+    now: u64,
+    clock_skew: u64,
+) -> Result<(), AdapterError> {
+    if value.schema_version != ADAPTER_INSPECTION_VERSION
+        || value.evidence_class != "adapter_host_observation"
+        || value.evidence_source != "domain_local_adapter_host"
+        || value.authorizes_mutation
+        || value.observed_at > now.saturating_add(clock_skew)
+        || value.expires_at < value.observed_at
+        || now > value.expires_at
+        || value.entries.len() > 1024
+    {
+        return Err(AdapterError::Invalid);
+    }
+    for extension in &value.extensions {
+        if !supported_extensions.contains(&extension.id)
+            && matches!(
+                extension.class,
+                ExtensionClass::RequiredUnderstood | ExtensionClass::RequiredSecurityCritical
+            )
+        {
+            return Err(AdapterError::Unsupported);
+        }
+    }
+    let valid_digest = |value: &str| {
+        value.len() == 71
+            && value.starts_with("sha256:")
+            && value[7..].bytes().all(|byte| byte.is_ascii_hexdigit())
+    };
+    let mut identities = BTreeSet::new();
+    for entry in &value.entries {
+        if entry.target_id.is_empty()
+            || entry.target_id.len() > 256
+            || entry.registered_capability.is_empty()
+            || entry.registered_capability.len() > 256
+            || entry.reason_code.is_empty()
+            || entry.reason_code.len() > 128
+            || entry.advertised_capabilities.is_empty()
+            || entry.advertised_capabilities.len() > 128
+            || !valid_digest(&entry.descriptor_digest)
+            || entry
+                .observation_digest
+                .as_deref()
+                .is_some_and(|value| !valid_digest(value))
+            || !identities.insert((&entry.target_id, &entry.registered_capability))
+        {
+            return Err(AdapterError::Invalid);
+        }
+        let mut capabilities = entry.advertised_capabilities.clone();
+        capabilities.sort();
+        capabilities.dedup();
+        if capabilities != entry.advertised_capabilities
+            || !capabilities.contains(&entry.registered_capability)
+        {
+            return Err(AdapterError::Invalid);
+        }
+    }
+    Ok(())
+}
 #[derive(Debug, Error, PartialEq)]
 pub enum AdapterError {
     #[error("ADAPTER_UNSUPPORTED")]
@@ -88,7 +183,14 @@ pub trait ManagedAdapter {
 pub struct AdapterHost {
     adapters: BTreeMap<(String, String), Box<dyn ManagedAdapter>>,
     cancelled: BTreeSet<String>,
-    completed: BTreeMap<String, (String, AdapterReceipt)>,
+    completed: BTreeMap<String, CompletedOperation>,
+}
+
+struct CompletedOperation {
+    binding: String,
+    target_id: String,
+    capability: String,
+    receipt: AdapterReceipt,
 }
 impl AdapterHost {
     pub fn new() -> Self {
@@ -110,6 +212,57 @@ impl AdapterHost {
     pub fn cancel(&mut self, operation_id: &str) {
         self.cancelled.insert(operation_id.into());
     }
+    pub fn inspection(&self, now: u64, lifetime: u64) -> AdapterInspectionV1 {
+        let entries = self
+            .adapters
+            .iter()
+            .map(|((target_id, registered_capability), adapter)| {
+                let mut descriptor = adapter.descriptor();
+                descriptor.capabilities.sort();
+                descriptor.capabilities.dedup();
+                let descriptor_digest = digest(&descriptor).expect("adapter descriptor serializes");
+                let observation = adapter.observe();
+                let latest = self
+                    .completed
+                    .values()
+                    .filter(|completed| {
+                        completed.target_id == *target_id
+                            && completed.capability == *registered_capability
+                    })
+                    .max_by_key(|completed| completed.receipt.generation);
+                AdapterInspectionEntryV1 {
+                    target_id: target_id.clone(),
+                    registered_capability: registered_capability.clone(),
+                    advertised_capabilities: descriptor.capabilities,
+                    descriptor_digest,
+                    observation_digest: observation
+                        .as_ref()
+                        .ok()
+                        .and_then(|value| digest(value).ok()),
+                    observed_generation: latest.map(|value| value.receipt.generation),
+                    convergence_state: latest.map(|value| value.receipt.state.clone()),
+                    reason_code: if observation.is_err() {
+                        "ADAPTER_OBSERVATION_FAILED"
+                    } else if latest.is_some() {
+                        "ADAPTER_RECEIPT_REPORTED"
+                    } else {
+                        "ADAPTER_OBSERVED_NO_CONVERGENCE_RECEIPT"
+                    }
+                    .into(),
+                }
+            })
+            .collect();
+        AdapterInspectionV1 {
+            schema_version: ADAPTER_INSPECTION_VERSION.into(),
+            evidence_class: "adapter_host_observation".into(),
+            evidence_source: "domain_local_adapter_host".into(),
+            authorizes_mutation: false,
+            observed_at: now,
+            expires_at: now.saturating_add(lifetime),
+            entries,
+            extensions: Vec::new(),
+        }
+    }
     pub fn execute(
         &mut self,
         authorized: &AuthorizedAdapterOperation,
@@ -118,9 +271,9 @@ impl AdapterHost {
         let operation = authorized.operation();
         validate_operation(operation, now)?;
         let binding = operation_binding(operation)?;
-        if let Some((prior, receipt)) = self.completed.get(&operation.operation_id) {
-            return if prior == &binding {
-                Ok(receipt.clone())
+        if let Some(completed) = self.completed.get(&operation.operation_id) {
+            return if completed.binding == binding {
+                Ok(completed.receipt.clone())
             } else {
                 Err(AdapterError::ReplayConflict)
             };
@@ -147,8 +300,15 @@ impl AdapterHost {
             "rollback" => adapter.rollback(operation),
             _ => Err(AdapterError::Unsupported),
         }?;
-        self.completed
-            .insert(operation.operation_id.clone(), (binding, receipt.clone()));
+        self.completed.insert(
+            operation.operation_id.clone(),
+            CompletedOperation {
+                binding,
+                target_id: operation.target_id.clone(),
+                capability: operation.capability.clone(),
+                receipt: receipt.clone(),
+            },
+        );
         Ok(receipt)
     }
 }

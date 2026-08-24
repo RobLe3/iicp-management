@@ -406,6 +406,96 @@ fn adapter_host_is_target_scoped_cancellable_and_dry_run_safe() {
 }
 
 #[test]
+fn adapter_inspection_is_deterministic_bounded_and_non_authorizing() {
+    let mut host = AdapterHost::new();
+    host.register(
+        "target:b",
+        "synthetic-v1",
+        Box::new(SyntheticAdapter::new()),
+    );
+    host.register(
+        "target:a",
+        "synthetic-v1",
+        Box::new(SyntheticAdapter::new()),
+    );
+    let before = host.inspection(1000, 60);
+    assert!(!before.authorizes_mutation);
+    assert_eq!(before.entries[0].target_id, "target:a");
+    assert_eq!(before.entries[1].target_id, "target:b");
+    assert!(before
+        .entries
+        .iter()
+        .all(|entry| entry.observed_generation.is_none()));
+
+    let mut applied = op("observed", 0, json!({"v": 1}));
+    applied.target_id = "target:b".into();
+    let applied = authorized(applied, 1000);
+    host.execute(&applied, 1000).unwrap();
+    let after = host.inspection(1001, 60);
+    assert_eq!(after.entries[0], before.entries[0]);
+    assert_eq!(after.entries[1].observed_generation, Some(1));
+    assert_eq!(
+        after.entries[1].convergence_state,
+        Some(ConvergenceState::Converged)
+    );
+    validate_adapter_inspection(&after, &BTreeSet::new(), 1001, 0).unwrap();
+
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("inspection.db");
+    let key = SigningKey::from_bytes(&[31; 32]);
+    let controller =
+        Controller::open(&database, policy(1001), key.verifying_key().to_bytes()).unwrap();
+    drop(controller);
+    let snapshot = inspect_controller_database(&database, 10).unwrap();
+    let combined = attach_adapter_inspection(snapshot, after, 1001).unwrap();
+    assert_eq!(
+        combined.observed_state,
+        "observed_without_convergence_receipt"
+    );
+}
+
+#[test]
+fn adapter_inspection_conformance_fixture_matches_rust_validator() {
+    let path = format!(
+        "{}/fixtures/adapter-inspection-conformance-v1.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let fixture: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    let schema_path = format!(
+        "{}/contracts/adapter-inspection-v1.schema.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let schema: Value = serde_json::from_slice(&std::fs::read(schema_path).unwrap()).unwrap();
+    let schema = jsonschema::validator_for(&schema).unwrap();
+    let now = fixture["now"].as_u64().unwrap();
+    let skew = fixture["clock_skew"].as_u64().unwrap();
+    for case in fixture["cases"].as_array().unwrap() {
+        let input: AdapterInspectionV1 = serde_json::from_value(case["input"].clone()).unwrap();
+        let actual = validate_adapter_inspection(&input, &BTreeSet::new(), now, skew).is_ok();
+        assert_eq!(actual, case["expected"] == "accept", "{}", case["id"]);
+        if case["id"] == "AI1-VALID-CONVERGED" {
+            assert!(schema.is_valid(&case["input"]));
+        }
+    }
+}
+
+#[test]
+fn adapter_inspection_rejects_oversized_and_secret_shaped_evidence() {
+    let mut host = AdapterHost::new();
+    host.register("target", "synthetic-v1", Box::new(SyntheticAdapter::new()));
+    let mut inspection = host.inspection(1000, 60);
+    inspection.entries = vec![inspection.entries[0].clone(); 1025];
+    assert_eq!(
+        validate_adapter_inspection(&inspection, &BTreeSet::new(), 1000, 0),
+        Err(AdapterError::Invalid)
+    );
+
+    let mut value = serde_json::to_value(host.inspection(1000, 60)).unwrap();
+    value["entries"][0]["raw_configuration"] = json!({"token":"forbidden"});
+    assert!(serde_json::from_value::<AdapterInspectionV1>(value).is_err());
+}
+
+#[test]
 fn operation_replay_binds_plan_target_and_capability() {
     let mut adapter = SyntheticAdapter::new();
     let original = op("bound", 0, json!({"v": 1}));
