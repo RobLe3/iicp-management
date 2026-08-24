@@ -27,6 +27,15 @@ semantic. Requests expire within five minutes. Nonces are single use, and the
 expected generation is changed transactionally with the recorded decision.
 High-impact operations fail when the configured revocation checkpoint is stale.
 
+The versioned local plan-submission envelope carries a pre-signed request and
+the exact semantic plan, but not the desired-state values. The controller
+accepts it only when the request's plan digest, bundle digest, resource set and
+generation match the submitted plan. The dedicated `accept_plan` action advances
+accepted controller state; it is not an adapter `apply` operation. Its receipt
+therefore states that no target effect was attempted and convergence was not
+evaluated. Signing, interactive confirmation and target execution remain
+separate authority layers.
+
 Managed adapters expose only bounded capabilities. The initial contract permits
 observation, dry-run, apply, verification and rollback; it does not include an
 arbitrary shell. Each host registration binds one exact target and capability.

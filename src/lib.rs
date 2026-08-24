@@ -7,6 +7,7 @@ use thiserror::Error;
 
 pub mod adapters;
 pub mod controller;
+pub mod ipc;
 pub mod policy_lifecycle;
 pub mod progressive_authority;
 

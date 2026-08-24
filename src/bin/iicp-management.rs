@@ -1,7 +1,9 @@
 use iicp_management_core::adapters::{validate_adapter_inspection, AdapterInspectionV1};
 use iicp_management_core::controller::{
-    attach_adapter_inspection, inspect_controller_database, Controller,
+    attach_adapter_inspection, inspect_controller_database, validate_plan_submission, Controller,
+    DecisionState, LocalPlanSubmissionV1,
 };
+use iicp_management_core::ipc::submit_plan;
 use iicp_management_core::policy_lifecycle::{
     simulate_policy_change, ApplicationBindingV1, InMemoryPolicyRepository, PolicyActivationV1,
     PolicyRepository, PolicyRevisionV1, PolicySetV1,
@@ -62,11 +64,12 @@ fn emit<T: Serialize>(value: &T, json_output: bool, summary: impl FnOnce() -> St
 }
 
 fn usage() -> &'static str {
-    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|controller|evidence> ...\n\
+    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|submit-plan|controller|evidence> ...\n\
 validate <bundle.json>\nplan <bundle.json> <accepted.json>\ndiff <plan.json>\nsimulate <current-workspace.json> <proposed-workspace.json> <facts.json> <binding-id>\n\
 show <stored-policies|active-policies|effective-policy> <workspace.json> [facts.json] [binding-id]\n\
 explain decision <workspace.json> <facts.json> <binding-id> <intent> <decision-id>\n\
 verify-receipt <receipt.json> <plan.json> <audience>\nadapter inspect <adapter-inspection.json>\n\
+submit-plan <socket-or-pipe> <submission.json>\n\
 controller status <controller.db> [adapter-inspection.json]\nevidence export <controller.db> [adapter-inspection.json]"
 }
 
@@ -208,6 +211,30 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                 )
             });
         }
+        Some("submit-plan") => {
+            let a = require(&args[1..], 2)?;
+            let submission: LocalPlanSubmissionV1 = read(&a[1])?;
+            validate_plan_submission(&submission).map_err(|e| e.to_string())?;
+            let output = submit_plan(Path::new(&a[0]), &submission)?;
+            let decision = output.decision.clone();
+            let generation = output.controller_generation;
+            let reason = output.reason.clone();
+            emit(&output, json_output, || match decision {
+                DecisionState::Accepted => format!(
+                    "Plan accepted at controller generation {}; no target action was attempted",
+                    generation.map_or_else(|| "unknown".into(), |value| value.to_string())
+                ),
+                DecisionState::Rejected => format!("Plan rejected: {reason}"),
+                DecisionState::Deferred => format!("Plan deferred: {reason}"),
+                _ => format!("Plan submission returned {decision:?}: {reason}"),
+            });
+            match output.decision {
+                DecisionState::Accepted => {}
+                DecisionState::Rejected => return Err("SUBMISSION_REJECTED".into()),
+                DecisionState::Deferred => return Err("SUBMISSION_DEFERRED".into()),
+                _ => return Err("SUBMISSION_UNKNOWN".into()),
+            }
+        }
         Some("adapter") if args.get(1).map(String::as_str) == Some("inspect") => {
             let a = require(&args[2..], 1)?;
             let output: AdapterInspectionV1 = read(&a[0])?;
@@ -270,8 +297,13 @@ fn main() -> ExitCode {
             }
             ExitCode::from(if error.starts_with("INPUT_") || error == "USAGE_INVALID" {
                 2
-            } else if error.contains("DENY") || error.contains("UNSUPPORTED") {
+            } else if error == "SUBMISSION_REJECTED"
+                || error.contains("DENY")
+                || error.contains("UNSUPPORTED")
+            {
                 3
+            } else if error == "SUBMISSION_DEFERRED" {
+                5
             } else {
                 4
             })

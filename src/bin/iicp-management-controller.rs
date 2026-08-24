@@ -1,7 +1,13 @@
-use iicp_management_core::controller::{Controller, ControllerPolicy, ManagementRequest};
+use iicp_management_core::controller::{
+    Controller, ControllerPolicy, LocalPlanSubmissionV1, ManagementRequest,
+};
+use iicp_management_core::controller::{DecisionState, PlanSubmissionReceiptV1};
+use serde::Deserialize;
 #[cfg(unix)]
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::{collections::BTreeSet, env, fs, path::Path};
+
+const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 
 fn open(db: &Path, key: &Path, audience: String, domain: String) -> Result<Controller, String> {
     let bytes = fs::read(key).map_err(|e| e.to_string())?;
@@ -12,26 +18,63 @@ fn open(db: &Path, key: &Path, audience: String, domain: String) -> Result<Contr
         ControllerPolicy {
             audience,
             domain,
-            allowed_actions: BTreeSet::from(["apply".into(), "observe".into(), "rollback".into()]),
+            allowed_actions: BTreeSet::from([
+                "accept_plan".into(),
+                "apply".into(),
+                "observe".into(),
+                "rollback".into(),
+            ]),
             revocation_checkpoint: Controller::now(),
             max_checkpoint_age: 3600,
-            high_impact_actions: BTreeSet::from(["apply".into(), "rollback".into()]),
+            high_impact_actions: BTreeSet::from([
+                "accept_plan".into(),
+                "apply".into(),
+                "rollback".into(),
+            ]),
             max_decision_events: 10_000,
         },
         key,
     )
     .map_err(|e| e.to_string())
 }
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum WireRequest {
+    Plan(LocalPlanSubmissionV1),
+    Legacy(ManagementRequest),
+}
+
 fn process(controller: &mut Controller, line: &str) -> String {
-    match serde_json::from_str::<ManagementRequest>(line)
-        .map_err(|_| "REQUEST_INVALID:json".to_string())
-        .and_then(|r| {
-            controller
-                .evaluate(&r, Controller::now())
-                .map_err(|e| e.to_string())
-        }) {
-        Ok(r) => serde_json::to_string(&r).unwrap(),
-        Err(e) => serde_json::json!({"decision":"rejected","reason":e}).to_string(),
+    match serde_json::from_str::<WireRequest>(line) {
+        Ok(WireRequest::Legacy(request)) => {
+            match controller.evaluate(&request, Controller::now()) {
+                Ok(receipt) => serde_json::to_string(&receipt).unwrap(),
+                Err(error) => serde_json::json!({"decision":"rejected","reason":error.to_string()})
+                    .to_string(),
+            }
+        }
+        Ok(WireRequest::Plan(submission)) => {
+            match controller.accept_plan_submission(&submission, Controller::now()) {
+                Ok(receipt) => serde_json::to_string(&receipt).unwrap(),
+                Err(error) => {
+                    let decision = if error.to_string() == "STORAGE_ERROR" {
+                        DecisionState::Deferred
+                    } else {
+                        DecisionState::Rejected
+                    };
+                    serde_json::to_string(&PlanSubmissionReceiptV1::failure(
+                        submission.request.request_id,
+                        decision,
+                        error.to_string(),
+                        controller.generation().ok(),
+                    ))
+                    .unwrap()
+                }
+            }
+        }
+        Err(_) => {
+            serde_json::json!({"decision":"rejected","reason":"REQUEST_INVALID:json"}).to_string()
+        }
     }
 }
 #[cfg(unix)]
@@ -44,9 +87,16 @@ fn serve(mut controller: Controller, socket: &Path) -> Result<(), String> {
         let mut stream = stream.map_err(|e| e.to_string())?;
         let mut line = String::new();
         BufReader::new(stream.try_clone().map_err(|e| e.to_string())?)
+            .take(MAX_REQUEST_BYTES as u64 + 1)
             .read_line(&mut line)
             .map_err(|e| e.to_string())?;
-        writeln!(stream, "{}", process(&mut controller, &line)).map_err(|e| e.to_string())?;
+        let response = if line.len() > MAX_REQUEST_BYTES {
+            serde_json::json!({"decision":"rejected","reason":"REQUEST_INVALID:too_large"})
+                .to_string()
+        } else {
+            process(&mut controller, &line)
+        };
+        writeln!(stream, "{response}").map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -63,7 +113,7 @@ fn serve(mut controller: Controller, pipe: &Path) -> Result<(), String> {
 
 #[cfg(windows)]
 mod windows_ipc {
-    use super::{process, Controller};
+    use super::{process, Controller, MAX_REQUEST_BYTES};
     use std::{ffi::c_void, mem::size_of, path::Path, ptr};
     use windows_sys::{
         core::PWSTR,
@@ -89,8 +139,6 @@ mod windows_ipc {
             },
         },
     };
-
-    const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 
     struct Handle(HANDLE);
     impl Drop for Handle {
