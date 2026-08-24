@@ -1,6 +1,6 @@
 # ADR-002: Progressive operating modes do not grant authority
 
-**Status:** accepted  
+**Status:** accepted
 **Date:** 2026-08-24
 
 ## Context
