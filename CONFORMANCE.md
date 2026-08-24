@@ -28,3 +28,20 @@ production identifiers.
 These fixtures establish deterministic project evidence. They do not establish
 independent interoperability, authorize target mutation, or describe a running
 controller.
+
+## Policy lifecycle profile
+
+The policy-lifecycle pack covers versioned policy storage, application-binding
+validation, deterministic composition, activation generations and simulation:
+
+```bash
+python3 tools/run_policy_lifecycle_conformance.py \
+  fixtures/policy-lifecycle-conformance-v1.json \
+  --output /tmp/iicp-policy-lifecycle-report.json
+```
+
+The reference checker deliberately implements only the expression subset used
+by this pack. An independent implementation should consume the fixture contract
+through its own lifecycle and evaluator code. Passing the reference checker is
+project evidence, not independent interoperability or permission to activate a
+policy in a deployed domain.

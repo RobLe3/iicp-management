@@ -32,6 +32,13 @@ engine. It keeps eligibility separate from ranking, applies explicit deny
 precedence and returns stable reason codes. Unknown or stale evidence, adapter
 failures and missing apply authority fail closed.
 
+The policy-lifecycle v1 contracts add immutable policy revisions, policy sets,
+one-to-many application bindings and generation-bound activation. Stored and
+active policy remain separate. Effective policy, simulation and decision
+explanation are deterministic projections rather than editable policy state.
+CLI, API, automation and optional graphical clients consume the same typed
+contracts; command text is not canonical state.
+
 The profile bounds serialized policy and context sizes, rule and syntax-tree
 size, expression and named-reference depth, collection size, deterministic
 fuel and host execution time. An implementation may advertise lower local
@@ -45,6 +52,7 @@ cargo test --locked
 cargo clippy --locked --all-targets -- -D warnings
 cargo run --locked --bin iicp-management-conformance
 python3 tools/run_management_conformance.py fixtures/management-portable-conformance-v1.json
+python3 tools/run_policy_lifecycle_conformance.py fixtures/policy-lifecycle-conformance-v1.json
 ```
 
 The conformance runner accepts an optional fixture path:

@@ -1,0 +1,169 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/schemas/policy-lifecycle-v1.schema.json",
+  "title": "IICP management policy lifecycle v1",
+  "oneOf": [
+    {"$ref": "#/$defs/policyRevision"},
+    {"$ref": "#/$defs/policySet"},
+    {"$ref": "#/$defs/applicationBinding"},
+    {"$ref": "#/$defs/policyActivation"},
+    {"$ref": "#/$defs/effectivePolicy"},
+    {"$ref": "#/$defs/policyInventory"},
+    {"$ref": "#/$defs/applicationPolicyBrief"},
+    {"$ref": "#/$defs/simulationResult"},
+    {"$ref": "#/$defs/resolutionSummary"},
+    {"$ref": "#/$defs/decisionExplanation"}
+  ],
+  "$defs": {
+    "id": {"type": "string", "minLength": 1},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "extension": {
+      "type": "object", "additionalProperties": false, "required": ["id", "class"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "class": {"enum": ["OPTIONAL_IGNORABLE", "OPTIONAL_NEGOTIABLE", "REQUIRED_UNDERSTOOD", "REQUIRED_SECURITY_CRITICAL"]}
+      }
+    },
+    "policyReference": {
+      "type": "object", "additionalProperties": false,
+      "required": ["policy_id", "revision_id", "authority_rank", "mandatory", "order"],
+      "properties": {
+        "policy_id": {"$ref": "#/$defs/id"}, "revision_id": {"$ref": "#/$defs/id"},
+        "authority_rank": {"type": "integer", "minimum": 0}, "mandatory": {"type": "boolean"},
+        "order": {"type": "integer", "minimum": 0}
+      }
+    },
+    "policySetReference": {
+      "type": "object", "additionalProperties": false,
+      "required": ["policy_set_id", "revision_id", "order"],
+      "properties": {
+        "policy_set_id": {"$ref": "#/$defs/id"}, "revision_id": {"$ref": "#/$defs/id"},
+        "order": {"type": "integer", "minimum": 0}
+      }
+    },
+    "policyRevision": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "policy_id", "revision_id", "authority", "scope", "disposition", "policy"],
+      "properties": {
+        "schema_version": {"const": "1"}, "policy_id": {"$ref": "#/$defs/id"},
+        "revision_id": {"$ref": "#/$defs/id"}, "authority": {"$ref": "#/$defs/id"},
+        "scope": {"$ref": "#/$defs/id"},
+        "disposition": {"enum": ["stored", "invalid", "active", "superseded", "archived"]},
+        "policy": {"type": "object"}, "valid_from": {"type": ["integer", "null"], "minimum": 0},
+        "valid_until": {"type": ["integer", "null"], "minimum": 0},
+        "extensions": {"type": "array", "items": {"$ref": "#/$defs/extension"}}
+      }
+    },
+    "policySet": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "policy_set_id", "revision_id", "authority", "members"],
+      "properties": {
+        "schema_version": {"const": "1"}, "policy_set_id": {"$ref": "#/$defs/id"},
+        "revision_id": {"$ref": "#/$defs/id"}, "authority": {"$ref": "#/$defs/id"},
+        "members": {"type": "array", "items": {"$ref": "#/$defs/policyReference"}},
+        "extensions": {"type": "array", "items": {"$ref": "#/$defs/extension"}}
+      }
+    },
+    "applicationBinding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "binding_id", "application_id", "authority", "policies", "policy_sets"],
+      "properties": {
+        "schema_version": {"const": "1"}, "binding_id": {"$ref": "#/$defs/id"},
+        "application_id": {"$ref": "#/$defs/id"}, "authority": {"$ref": "#/$defs/id"},
+        "policies": {"type": "array", "items": {"$ref": "#/$defs/policyReference"}},
+        "policy_sets": {"type": "array", "items": {"$ref": "#/$defs/policySetReference"}},
+        "valid_from": {"type": ["integer", "null"], "minimum": 0},
+        "valid_until": {"type": ["integer", "null"], "minimum": 0},
+        "extensions": {"type": "array", "items": {"$ref": "#/$defs/extension"}}
+      }
+    },
+    "policyActivation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "activation_id", "binding_id", "authority", "expected_generation", "target_generation", "binding_digest", "policy_revision_digests", "activated_at"],
+      "properties": {
+        "schema_version": {"const": "1"}, "activation_id": {"$ref": "#/$defs/id"},
+        "binding_id": {"$ref": "#/$defs/id"}, "authority": {"$ref": "#/$defs/id"},
+        "expected_generation": {"type": "integer", "minimum": 0}, "target_generation": {"type": "integer", "minimum": 1},
+        "binding_digest": {"$ref": "#/$defs/digest"},
+        "policy_revision_digests": {"type": "object", "additionalProperties": {"$ref": "#/$defs/digest"}},
+        "activated_at": {"type": "integer", "minimum": 0}, "valid_until": {"type": ["integer", "null"], "minimum": 0}
+      }
+    },
+    "sourceDecision": {
+      "type": "object", "additionalProperties": false,
+      "required": ["policy_id", "revision_id", "authority_rank", "mandatory", "decision", "reason_codes", "policy_digest"],
+      "properties": {
+        "policy_id": {"$ref": "#/$defs/id"}, "revision_id": {"$ref": "#/$defs/id"},
+        "authority_rank": {"type": "integer", "minimum": 0}, "mandatory": {"type": "boolean"},
+        "decision": {"enum": ["allow", "deny", "indeterminate"]},
+        "reason_codes": {"type": "array", "items": {"type": "string"}}, "policy_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "effectivePolicy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "application_id", "binding_id", "binding_digest", "fact_snapshot_digest", "decision", "reason_codes", "sources"],
+      "properties": {
+        "schema_version": {"const": "1"}, "application_id": {"$ref": "#/$defs/id"}, "binding_id": {"$ref": "#/$defs/id"},
+        "binding_digest": {"$ref": "#/$defs/digest"}, "fact_snapshot_digest": {"$ref": "#/$defs/digest"},
+        "decision": {"enum": ["allow", "deny", "indeterminate"]},
+        "reason_codes": {"type": "array", "items": {"type": "string"}},
+        "sources": {"type": "array", "items": {"$ref": "#/$defs/sourceDecision"}}
+      }
+    },
+    "policyInventory": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "entries"],
+      "properties": {
+        "schema_version": {"const": "1"},
+        "entries": {"type": "array", "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["policy_id", "revision_id", "disposition", "policy_digest", "active_binding_count"],
+          "properties": {
+            "policy_id": {"$ref": "#/$defs/id"}, "revision_id": {"$ref": "#/$defs/id"},
+            "disposition": {"enum": ["stored", "invalid", "active", "superseded", "archived"]},
+            "policy_digest": {"$ref": "#/$defs/digest"}, "active_binding_count": {"type": "integer", "minimum": 0}
+          }
+        }}
+      }
+    },
+    "applicationPolicyBrief": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "application_id", "binding_id", "active_generation", "effective_policy"],
+      "properties": {
+        "schema_version": {"const": "1"}, "application_id": {"$ref": "#/$defs/id"},
+        "binding_id": {"$ref": "#/$defs/id"}, "active_generation": {"type": ["integer", "null"], "minimum": 0},
+        "effective_policy": {"$ref": "#/$defs/effectivePolicy"}
+      }
+    },
+    "simulationResult": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "current", "proposed", "decision_changed", "newly_allowed", "newly_denied"],
+      "properties": {
+        "schema_version": {"const": "1"}, "current": {"$ref": "#/$defs/effectivePolicy"},
+        "proposed": {"$ref": "#/$defs/effectivePolicy"}, "decision_changed": {"type": "boolean"},
+        "newly_allowed": {"type": "boolean"}, "newly_denied": {"type": "boolean"}
+      }
+    },
+    "resolutionSummary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "application_id", "intent", "eligible", "decision", "effective_policy_digest", "evidence_snapshot_digest", "preferences"],
+      "properties": {
+        "schema_version": {"const": "1"}, "application_id": {"$ref": "#/$defs/id"}, "intent": {"$ref": "#/$defs/id"},
+        "eligible": {"type": "boolean"}, "decision": {"enum": ["allow", "deny", "indeterminate"]},
+        "effective_policy_digest": {"$ref": "#/$defs/digest"}, "evidence_snapshot_digest": {"$ref": "#/$defs/digest"},
+        "preferences": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "decisionExplanation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "decision_id", "application_id", "intent", "decision", "reason_codes", "determining_policy_ids", "fact_snapshot_digest"],
+      "properties": {
+        "schema_version": {"const": "1"}, "decision_id": {"$ref": "#/$defs/id"}, "application_id": {"$ref": "#/$defs/id"},
+        "intent": {"$ref": "#/$defs/id"}, "decision": {"enum": ["allow", "deny", "indeterminate"]},
+        "reason_codes": {"type": "array", "items": {"type": "string"}},
+        "determining_policy_ids": {"type": "array", "items": {"$ref": "#/$defs/id"}},
+        "fact_snapshot_digest": {"$ref": "#/$defs/digest"}
+      }
+    }
+  }
+}
