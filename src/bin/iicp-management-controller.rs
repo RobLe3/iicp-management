@@ -1,9 +1,13 @@
+use iicp_management_core::adapters::{AdapterHost, RuntimeConfigAdapter, SyntheticAdapter};
 use iicp_management_core::apply_gate::LocalApplyGateV1;
 use iicp_management_core::controller::{
     ApplyAuthorizationReceiptV1, Controller, ControllerPolicy, LocalPlanSubmissionV1,
     ManagementRequest,
 };
 use iicp_management_core::controller::{DecisionState, PlanSubmissionReceiptV1};
+use iicp_management_core::execution::{
+    execute_authorized, ApplyLifecycleReceiptV1, LocalApplyExecutionV1,
+};
 use serde::Deserialize;
 #[cfg(unix)]
 use std::io::{BufRead, BufReader, Read, Write};
@@ -42,13 +46,30 @@ fn open(db: &Path, key: &Path, audience: String, domain: String) -> Result<Contr
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum WireRequest {
+    Execute(Box<LocalApplyExecutionV1>),
     Apply(Box<LocalApplyGateV1>),
     Plan(Box<LocalPlanSubmissionV1>),
     Legacy(Box<ManagementRequest>),
 }
 
-fn process(controller: &mut Controller, line: &str) -> String {
+fn process(controller: &mut Controller, host: &mut Option<AdapterHost>, line: &str) -> String {
     match serde_json::from_str::<WireRequest>(line) {
+        Ok(WireRequest::Execute(execution)) => match host.as_mut() {
+            Some(host) => match execute_authorized(controller, host, &execution, Controller::now())
+            {
+                Ok(receipt) => serde_json::to_string(&receipt).unwrap(),
+                Err(error) => serde_json::to_string(&ApplyLifecycleReceiptV1::failure(
+                    execution.gate.operation.operation_id.clone(),
+                    error,
+                ))
+                .unwrap(),
+            },
+            None => serde_json::to_string(&ApplyLifecycleReceiptV1::failure(
+                execution.gate.operation.operation_id.clone(),
+                "EXECUTOR_NOT_CONFIGURED",
+            ))
+            .unwrap(),
+        },
         Ok(WireRequest::Apply(gate)) => {
             match controller.authorize_apply_gate(&gate, Controller::now()) {
                 Ok((receipt, _)) => serde_json::to_string(&receipt).unwrap(),
@@ -107,7 +128,11 @@ fn process(controller: &mut Controller, line: &str) -> String {
     }
 }
 #[cfg(unix)]
-fn serve(mut controller: Controller, socket: &Path) -> Result<(), String> {
+fn serve(
+    mut controller: Controller,
+    mut host: Option<AdapterHost>,
+    socket: &Path,
+) -> Result<(), String> {
     use std::os::unix::{fs::PermissionsExt, net::UnixListener};
     let _ = fs::remove_file(socket);
     let listener = UnixListener::bind(socket).map_err(|e| e.to_string())?;
@@ -123,7 +148,7 @@ fn serve(mut controller: Controller, socket: &Path) -> Result<(), String> {
             serde_json::json!({"decision":"rejected","reason":"REQUEST_INVALID:too_large"})
                 .to_string()
         } else {
-            process(&mut controller, &line)
+            process(&mut controller, &mut host, &line)
         };
         writeln!(stream, "{response}").map_err(|e| e.to_string())?;
     }
@@ -131,18 +156,22 @@ fn serve(mut controller: Controller, socket: &Path) -> Result<(), String> {
 }
 #[cfg(not(unix))]
 #[cfg(not(windows))]
-fn serve(_: Controller, _: &Path) -> Result<(), String> {
+fn serve(_: Controller, _: Option<AdapterHost>, _: &Path) -> Result<(), String> {
     Err("local IPC transport is not implemented on this platform".into())
 }
 
 #[cfg(windows)]
-fn serve(mut controller: Controller, pipe: &Path) -> Result<(), String> {
-    windows_ipc::serve(&mut controller, pipe)
+fn serve(
+    mut controller: Controller,
+    mut host: Option<AdapterHost>,
+    pipe: &Path,
+) -> Result<(), String> {
+    windows_ipc::serve(&mut controller, &mut host, pipe)
 }
 
 #[cfg(windows)]
 mod windows_ipc {
-    use super::{process, Controller, MAX_REQUEST_BYTES};
+    use super::{process, AdapterHost, Controller, MAX_REQUEST_BYTES};
     use std::{ffi::c_void, mem::size_of, path::Path, ptr};
     use windows_sys::{
         core::PWSTR,
@@ -321,7 +350,11 @@ mod windows_ipc {
         Ok(wide(name))
     }
 
-    fn serve_one(controller: &mut Controller, name: &[u16]) -> Result<(), String> {
+    fn serve_one(
+        controller: &mut Controller,
+        host: &mut Option<AdapterHost>,
+        name: &[u16],
+    ) -> Result<(), String> {
         let descriptor = owner_security_descriptor()?;
         let mut attributes = SECURITY_ATTRIBUTES {
             nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
@@ -354,7 +387,7 @@ mod windows_ipc {
             }));
         }
         let response = match read_request(pipe.0) {
-            Ok(request) => process(controller, &request),
+            Ok(request) => process(controller, host, &request),
             Err(error) => serde_json::json!({
                 "decision": "rejected",
                 "reason": format!("REQUEST_INVALID:{error}")
@@ -366,10 +399,14 @@ mod windows_ipc {
         Ok(())
     }
 
-    pub(super) fn serve(controller: &mut Controller, path: &Path) -> Result<(), String> {
+    pub(super) fn serve(
+        controller: &mut Controller,
+        host: &mut Option<AdapterHost>,
+        path: &Path,
+    ) -> Result<(), String> {
         let name = checked_pipe_name(path)?;
         loop {
-            serve_one(controller, &name)?;
+            serve_one(controller, host, &name)?;
         }
     }
 
@@ -415,7 +452,8 @@ mod windows_ipc {
             .unwrap();
             let pipe_name = format!(r"\\.\pipe\iicp-management-test-{}", std::process::id());
             let wide_name = checked_pipe_name(Path::new(&pipe_name)).unwrap();
-            let server = thread::spawn(move || serve_one(&mut controller, &wide_name).unwrap());
+            let server =
+                thread::spawn(move || serve_one(&mut controller, &mut None, &wide_name).unwrap());
 
             let mut client = None;
             for _ in 0..100 {
@@ -441,8 +479,8 @@ mod windows_ipc {
 }
 fn main() {
     let a: Vec<String> = env::args().collect();
-    if a.len() != 7 || a[1] != "serve" {
-        eprintln!("usage: iicp-management-controller serve <socket> <db> <public-key> <audience> <domain>");
+    if !((a.len() == 7 && a[1] == "serve") || (a.len() >= 9 && a[1] == "serve-executor")) {
+        eprintln!("usage: iicp-management-controller serve <socket> <db> <public-key> <audience> <domain>\n       iicp-management-controller serve-executor <socket> <db> <public-key> <audience> <domain> <synthetic-v1 target|runtime-config-v1 target path>");
         std::process::exit(2)
     }
     let c = open(
@@ -455,7 +493,31 @@ fn main() {
         eprintln!("{e}");
         std::process::exit(2)
     });
-    if let Err(e) = serve(c, Path::new(&a[2])) {
+    let host = if a[1] == "serve-executor" {
+        let mut host = AdapterHost::new();
+        match a[7].as_str() {
+            "synthetic-v1" if a.len() == 9 => host.register(
+                a[8].clone(),
+                "synthetic-v1",
+                Box::new(SyntheticAdapter::new()),
+            ),
+            "runtime-config-v1" if a.len() == 10 => {
+                let adapter = RuntimeConfigAdapter::open(Path::new(&a[9])).unwrap_or_else(|e| {
+                    eprintln!("{e}");
+                    std::process::exit(2)
+                });
+                host.register(a[8].clone(), "runtime-config-v1", Box::new(adapter));
+            }
+            _ => {
+                eprintln!("invalid executor adapter configuration");
+                std::process::exit(2)
+            }
+        }
+        Some(host)
+    } else {
+        None
+    };
+    if let Err(e) = serve(c, host, Path::new(&a[2])) {
         eprintln!("{e}");
         std::process::exit(1)
     }

@@ -163,6 +163,10 @@ pub enum AdapterError {
     UnknownTarget,
     #[error("ADAPTER_CANCELLED")]
     Cancelled,
+    #[error("ADAPTER_TIMEOUT")]
+    Timeout,
+    #[error("ADAPTER_OUTCOME_UNKNOWN")]
+    OutcomeUnknown,
 }
 pub trait ManagedAdapter {
     fn descriptor(&self) -> AdapterDescriptor;
@@ -311,6 +315,19 @@ impl AdapterHost {
         );
         Ok(receipt)
     }
+    /// Independently reads the target after an execution attempt. This never
+    /// reuses the host's cached apply receipt.
+    pub fn verify_authorized(
+        &self,
+        authorized: &AuthorizedAdapterOperation,
+    ) -> Result<AdapterReceipt, AdapterError> {
+        let operation = authorized.operation();
+        let adapter = self
+            .adapters
+            .get(&(operation.target_id.clone(), operation.capability.clone()))
+            .ok_or(AdapterError::UnknownTarget)?;
+        adapter.verify(operation)
+    }
 }
 impl Default for AdapterHost {
     fn default() -> Self {
@@ -400,6 +417,14 @@ impl ManagedAdapter for SyntheticAdapter {
         }
         let old = self.state.clone();
         let simulation = o.desired.get("simulate").and_then(Value::as_str);
+        if simulation == Some("timeout_before_effect") {
+            return Err(AdapterError::Timeout);
+        }
+        if simulation == Some("unknown_after_effect") {
+            self.state = o.desired.clone();
+            self.generation += 1;
+            return Err(AdapterError::OutcomeUnknown);
+        }
         let (state, reason) = match simulation {
             Some("partial") => {
                 self.state = serde_json::json!({"partial": true});
@@ -499,6 +524,7 @@ pub struct RuntimeConfigAdapter {
 #[derive(Debug, Clone, Default)]
 pub struct RuntimeConfigFailureInjection {
     pub interrupt_before_replace: bool,
+    pub outcome_unknown_after_replace: bool,
     pub readback_mismatch: bool,
     pub rollback_failure: bool,
 }
@@ -622,6 +648,9 @@ impl ManagedAdapter for RuntimeConfigAdapter {
         if fs::rename(&tmp.1, &self.path).is_err() {
             let _ = fs::remove_file(&tmp.1);
             return Err(AdapterError::Io);
+        }
+        if self.failure_injection.outcome_unknown_after_replace {
+            return Err(AdapterError::OutcomeUnknown);
         }
         if self.failure_injection.readback_mismatch || self.observe() != Ok(o.desired.clone()) {
             if self.failure_injection.rollback_failure

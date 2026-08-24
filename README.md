@@ -190,3 +190,32 @@ The `progressive-authority-v1` contract records the operating mode, policy
 generation and evidence provenance. `may_request_apply` means only that the
 projection has the required plan, authorization evidence and satisfied policy
 boundary; the domain-local controller still makes the apply decision.
+
+### Authorized local execution
+
+Execution is a second, explicit step. Start the controller with one narrowly
+configured target adapter, authorize the exact apply gate, and then submit that
+same gate for execution:
+
+```bash
+iicp-management-controller serve-executor \
+  /run/user/$(id -u)/iicp-management.sock controller.db operator.pub \
+  controller:local domain:local runtime-config-v1 runtime:primary runtime.json
+
+iicp-management request-apply /run/user/$(id -u)/iicp-management.sock \
+  apply-request.json --confirm operation:finance
+
+iicp-management execute-apply /run/user/$(id -u)/iicp-management.sock \
+  apply-request.json --confirm operation:finance
+```
+
+The controller persists the exact operation and authority-context digests when
+it authorizes the request. Execution resumes only that stored authorization;
+it does not consume the nonce or advance controller generation again. Controller
+generation and target generation are separate concurrency domains.
+
+Every attempt produces separate controller-authorization, adapter and
+independent verification evidence. A timeout, I/O interruption or unknown
+adapter outcome is observed before any retry decision and is reported as
+`deferred`; this slice never retries an apply automatically. Full crash recovery,
+rollback orchestration and fleet deployment remain separate later milestones.

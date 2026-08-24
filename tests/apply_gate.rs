@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use ed25519_dalek::{Signer, SigningKey};
 use iicp_management_core::{
-    adapters::AdapterOperation,
+    adapters::{AdapterHost, AdapterOperation, SyntheticAdapter},
     apply_gate::{
         authorization_signing_bytes, preview_apply, validate_apply_gate,
         ApplyAuthorizationEvidenceV1, ApplyGateError, LocalApplyGateV1, APPLY_GATE_SCHEMA,
@@ -11,6 +11,10 @@ use iicp_management_core::{
         SIGNATURE_PROFILE,
     },
     digest,
+    execution::{
+        execute_authorized, ExecutionState, LocalApplyExecutionV1, RetryDisposition,
+        EXECUTION_SCHEMA,
+    },
     progressive_authority::{
         OperatingMode, PolicyBoundaryAssessment, ProgressiveAuthorityEvidenceV1,
     },
@@ -20,6 +24,100 @@ use std::collections::BTreeSet;
 
 fn sha(character: char) -> String {
     format!("sha256:{}", character.to_string().repeat(64))
+}
+
+#[test]
+fn authorized_execution_applies_then_independently_verifies() {
+    let now = 1_700_000_000;
+    let key = SigningKey::from_bytes(&[41; 32]);
+    let dir = tempfile::tempdir().unwrap();
+    let mut controller = controller_at_generation_one(&dir.path().join("controller.db"), &key, now);
+    let gate = gate(&key, OperatingMode::Confirm, now);
+    controller.authorize_apply_gate(&gate, now).unwrap();
+    let mut adapter = SyntheticAdapter::new();
+    adapter.generation = gate.operation.expected_generation;
+    let mut host = AdapterHost::new();
+    host.register("target:finance", "synthetic-v1", Box::new(adapter));
+    let receipt = execute_authorized(
+        &controller,
+        &mut host,
+        &LocalApplyExecutionV1 {
+            schema_version: EXECUTION_SCHEMA.into(),
+            gate,
+        },
+        now,
+    )
+    .unwrap();
+    assert_eq!(receipt.state, ExecutionState::Converged);
+    assert_eq!(receipt.retry, RetryDisposition::NotNeeded);
+    assert!(receipt.adapter_receipt.is_some());
+    assert!(receipt.verification_receipt.is_some());
+}
+
+#[test]
+fn execution_requires_previously_persisted_exact_authorization() {
+    let now = 1_700_000_000;
+    let key = SigningKey::from_bytes(&[42; 32]);
+    let dir = tempfile::tempdir().unwrap();
+    let controller = controller_at_generation_one(&dir.path().join("controller.db"), &key, now);
+    let gate = gate(&key, OperatingMode::Confirm, now);
+    let mut host = AdapterHost::new();
+    host.register(
+        "target:finance",
+        "synthetic-v1",
+        Box::new(SyntheticAdapter::new()),
+    );
+    let result = execute_authorized(
+        &controller,
+        &mut host,
+        &LocalApplyExecutionV1 {
+            schema_version: EXECUTION_SCHEMA.into(),
+            gate,
+        },
+        now,
+    );
+    assert_eq!(result.unwrap_err(), "REQUEST_APPLY_GATE_INVALID");
+}
+
+#[test]
+fn unknown_outcome_is_observed_and_never_automatically_retried() {
+    let now = 1_700_000_000;
+    let key = SigningKey::from_bytes(&[43; 32]);
+    let dir = tempfile::tempdir().unwrap();
+    let mut controller = controller_at_generation_one(&dir.path().join("controller.db"), &key, now);
+    let mut gate = gate(&key, OperatingMode::Confirm, now);
+    gate.operation.desired = serde_json::json!({"simulate":"unknown_after_effect"});
+    gate.operation.desired_digest = digest(&gate.operation.desired).unwrap();
+    gate.plan.operations[0].after_digest = gate.operation.desired_digest.clone();
+    gate.request.payload_digest = gate.operation.desired_digest.clone();
+    gate.request.plan_digest = digest(&gate.plan).unwrap();
+    gate.operation.plan_digest = gate.request.plan_digest.clone();
+    gate.authorization.plan_digest = gate.request.plan_digest.clone();
+    gate.authorization.operation_digest = digest(&gate.operation).unwrap();
+    sign_authorization(&key, &mut gate.authorization);
+    gate.progressive_authority.plan_digest = Some(gate.request.plan_digest.clone());
+    gate.progressive_authority.authorization_evidence_digest =
+        Some(digest(&gate.authorization).unwrap());
+    sign_request(&key, &mut gate.request);
+    controller.authorize_apply_gate(&gate, now).unwrap();
+    let mut adapter = SyntheticAdapter::new();
+    adapter.generation = gate.operation.expected_generation;
+    let mut host = AdapterHost::new();
+    host.register("target:finance", "synthetic-v1", Box::new(adapter));
+    let receipt = execute_authorized(
+        &controller,
+        &mut host,
+        &LocalApplyExecutionV1 {
+            schema_version: EXECUTION_SCHEMA.into(),
+            gate,
+        },
+        now,
+    )
+    .unwrap();
+    assert_eq!(receipt.state, ExecutionState::Deferred);
+    assert_eq!(receipt.retry, RetryDisposition::ObserveBeforeRetryCompleted);
+    assert!(receipt.adapter_receipt.is_none());
+    assert!(receipt.verification_receipt.is_some());
 }
 
 fn sign_request(key: &SigningKey, request: &mut ManagementRequest) {
