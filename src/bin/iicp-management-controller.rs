@@ -1,10 +1,7 @@
 use iicp_management_core::controller::{Controller, ControllerPolicy, ManagementRequest};
-use std::{
-    collections::BTreeSet,
-    env, fs,
-    io::{BufRead, BufReader, Write},
-    path::Path,
-};
+#[cfg(unix)]
+use std::io::{BufRead, BufReader, Write};
+use std::{collections::BTreeSet, env, fs, path::Path};
 
 fn open(db: &Path, key: &Path, audience: String, domain: String) -> Result<Controller, String> {
     let bytes = fs::read(key).map_err(|e| e.to_string())?;
