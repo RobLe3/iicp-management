@@ -339,6 +339,13 @@ pub struct Controller {
     verifying_key: VerifyingKey,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecutionJournalRecord {
+    pub phase: String,
+    pub adapter_receipt_json: Option<String>,
+    pub lifecycle_receipt_json: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 struct ApplyAuthorizationBinding {
     operation_digest: String,
@@ -358,7 +365,7 @@ impl Controller {
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
                 .map_err(|_| ControllerError::Storage)?;
         }
-        connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY CHECK(id=1), generation INTEGER NOT NULL); INSERT OR IGNORE INTO state VALUES(1,0); CREATE TABLE IF NOT EXISTS nonces(nonce TEXT PRIMARY KEY, request_id TEXT NOT NULL, consumed_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS decisions(request_id TEXT PRIMARY KEY, decision TEXT NOT NULL, reason TEXT NOT NULL, generation INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS decision_events(id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT NOT NULL, generation INTEGER NOT NULL, recorded_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS apply_authorizations(request_id TEXT PRIMARY KEY, operation_digest TEXT NOT NULL, authority_context_digest TEXT NOT NULL, accepted_generation INTEGER NOT NULL);").map_err(|_|ControllerError::Storage)?;
+        connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY CHECK(id=1), generation INTEGER NOT NULL); INSERT OR IGNORE INTO state VALUES(1,0); CREATE TABLE IF NOT EXISTS nonces(nonce TEXT PRIMARY KEY, request_id TEXT NOT NULL, consumed_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS decisions(request_id TEXT PRIMARY KEY, decision TEXT NOT NULL, reason TEXT NOT NULL, generation INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS decision_events(id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT NOT NULL, generation INTEGER NOT NULL, recorded_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS apply_authorizations(request_id TEXT PRIMARY KEY, operation_digest TEXT NOT NULL, authority_context_digest TEXT NOT NULL, accepted_generation INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS execution_journal(request_id TEXT NOT NULL, operation_digest TEXT NOT NULL, phase TEXT NOT NULL, adapter_receipt_json TEXT, lifecycle_receipt_json TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY(request_id,operation_digest));").map_err(|_|ControllerError::Storage)?;
         Ok(Self {
             connection,
             policy,
@@ -370,6 +377,38 @@ impl Controller {
         self.connection
             .query_row("SELECT generation FROM state WHERE id=1", [], |r| r.get(0))
             .map_err(|_| ControllerError::Storage)
+    }
+    pub fn execution_journal(
+        &self,
+        request_id: &str,
+        operation_digest: &str,
+    ) -> Result<Option<ExecutionJournalRecord>, ControllerError> {
+        self.connection.query_row(
+            "SELECT phase,adapter_receipt_json,lifecycle_receipt_json FROM execution_journal WHERE request_id=?1 AND operation_digest=?2",
+            params![request_id, operation_digest],
+            |row| Ok(ExecutionJournalRecord { phase: row.get(0)?, adapter_receipt_json: row.get(1)?, lifecycle_receipt_json: row.get(2)? }),
+        ).optional().map_err(|_| ControllerError::Storage)
+    }
+    pub fn record_execution_phase(
+        &self,
+        request_id: &str,
+        operation_digest: &str,
+        phase: &str,
+        adapter_receipt_json: Option<&str>,
+        lifecycle_receipt_json: Option<&str>,
+        now: u64,
+    ) -> Result<(), ControllerError> {
+        if !matches!(
+            phase,
+            "started" | "adapter_reported" | "verified" | "complete"
+        ) {
+            return Err(ControllerError::Invalid("execution_phase"));
+        }
+        self.connection.execute(
+            "INSERT INTO execution_journal(request_id,operation_digest,phase,adapter_receipt_json,lifecycle_receipt_json,updated_at) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(request_id,operation_digest) DO UPDATE SET phase=excluded.phase,adapter_receipt_json=COALESCE(excluded.adapter_receipt_json,execution_journal.adapter_receipt_json),lifecycle_receipt_json=COALESCE(excluded.lifecycle_receipt_json,execution_journal.lifecycle_receipt_json),updated_at=excluded.updated_at",
+            params![request_id, operation_digest, phase, adapter_receipt_json, lifecycle_receipt_json, now],
+        ).map_err(|_| ControllerError::Storage)?;
+        Ok(())
     }
     fn signing_bytes(request: &ManagementRequest) -> Result<Vec<u8>, ControllerError> {
         let mut value =

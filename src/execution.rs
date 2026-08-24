@@ -79,13 +79,122 @@ pub fn execute_authorized(
     let (authorization, operation) = controller
         .resume_authorized_apply(&execution.gate, now)
         .map_err(|error| error.to_string())?;
+    let operation_digest =
+        crate::digest(&execution.gate.operation).map_err(|error| error.to_string())?;
+    if let Some(record) = controller
+        .execution_journal(&execution.gate.request.request_id, &operation_digest)
+        .map_err(|error| error.to_string())?
+    {
+        if matches!(record.phase.as_str(), "complete" | "verified") {
+            if let Some(json) = record.lifecycle_receipt_json {
+                let receipt: ApplyLifecycleReceiptV1 =
+                    serde_json::from_str(&json).map_err(|_| "EXECUTION_JOURNAL_INVALID")?;
+                if record.phase == "verified" {
+                    controller
+                        .record_execution_phase(
+                            &execution.gate.request.request_id,
+                            &operation_digest,
+                            "complete",
+                            None,
+                            Some(&json),
+                            now,
+                        )
+                        .map_err(|error| error.to_string())?;
+                }
+                return Ok(receipt);
+            }
+        }
+        if record.phase == "started" {
+            let verified = host.verify_authorized(&operation);
+            let (state, reason, retry) = match &verified {
+                Ok(receipt)
+                    if receipt.state == ConvergenceState::Converged
+                        && receipt.result_digest == execution.gate.operation.desired_digest =>
+                {
+                    (
+                        ExecutionState::PartiallyConverged,
+                        "EXECUTION_EFFECT_OBSERVED_AFTER_RESTART",
+                        RetryDisposition::ManualReviewRequired,
+                    )
+                }
+                Ok(_) => (
+                    ExecutionState::Deferred,
+                    "EXECUTION_RESTART_OBSERVATION_MISMATCH",
+                    RetryDisposition::ManualReviewRequired,
+                ),
+                Err(_) => (
+                    ExecutionState::Deferred,
+                    "EXECUTION_RESTART_OBSERVATION_UNAVAILABLE",
+                    RetryDisposition::ManualReviewRequired,
+                ),
+            };
+            let receipt = ApplyLifecycleReceiptV1 {
+                schema_version: EXECUTION_SCHEMA.into(),
+                operation_id: execution.gate.operation.operation_id.clone(),
+                controller_authorization: authorization,
+                adapter_receipt: None,
+                verification_receipt: verified.ok(),
+                state,
+                reason: reason.into(),
+                retry,
+            };
+            persist_complete(controller, execution, &operation_digest, &receipt, now)?;
+            return Ok(receipt);
+        }
+        if record.phase == "adapter_reported" {
+            let applied: AdapterReceipt = serde_json::from_str(
+                record
+                    .adapter_receipt_json
+                    .as_deref()
+                    .ok_or("EXECUTION_JOURNAL_INVALID")?,
+            )
+            .map_err(|_| "EXECUTION_JOURNAL_INVALID")?;
+            let verified = host.verify_authorized(&operation);
+            let receipt = lifecycle(authorization, execution, Ok(applied), verified);
+            persist_verified_and_complete(controller, execution, &operation_digest, &receipt, now)?;
+            return Ok(receipt);
+        }
+    }
+    controller
+        .record_execution_phase(
+            &execution.gate.request.request_id,
+            &operation_digest,
+            "started",
+            None,
+            None,
+            now,
+        )
+        .map_err(|error| error.to_string())?;
     let applied = host.execute(&operation, now);
+    if let Ok(receipt) = &applied {
+        let json = serde_json::to_string(receipt).map_err(|_| "EXECUTION_RECEIPT_INVALID")?;
+        controller
+            .record_execution_phase(
+                &execution.gate.request.request_id,
+                &operation_digest,
+                "adapter_reported",
+                Some(&json),
+                None,
+                now,
+            )
+            .map_err(|error| error.to_string())?;
+    }
     // Verification is deliberately independent and is attempted even when the
     // adapter reports a timeout or unknown outcome. Nothing here retries apply.
     let verified = host.verify_authorized(&operation);
+    let receipt = lifecycle(authorization, execution, applied, verified);
+    persist_verified_and_complete(controller, execution, &operation_digest, &receipt, now)?;
+    Ok(receipt)
+}
+
+fn lifecycle(
+    authorization: ApplyAuthorizationReceiptV1,
+    execution: &LocalApplyExecutionV1,
+    applied: Result<AdapterReceipt, AdapterError>,
+    verified: Result<AdapterReceipt, AdapterError>,
+) -> ApplyLifecycleReceiptV1 {
     let adapter_receipt = applied.as_ref().ok().cloned();
     let verification_receipt = verified.as_ref().ok().cloned();
-
     let (state, reason, retry) = match (&applied, &verified) {
         (Ok(apply), Ok(verify))
             if apply.state == ConvergenceState::Converged
@@ -129,7 +238,7 @@ pub fn execute_authorized(
             RetryDisposition::ManualReviewRequired,
         ),
     };
-    Ok(ApplyLifecycleReceiptV1 {
+    ApplyLifecycleReceiptV1 {
         schema_version: EXECUTION_SCHEMA.into(),
         operation_id: execution.gate.operation.operation_id.clone(),
         controller_authorization: authorization,
@@ -138,5 +247,55 @@ pub fn execute_authorized(
         state,
         reason: reason.into(),
         retry,
-    })
+    }
+}
+
+fn persist_verified_and_complete(
+    controller: &Controller,
+    execution: &LocalApplyExecutionV1,
+    operation_digest: &str,
+    receipt: &ApplyLifecycleReceiptV1,
+    now: u64,
+) -> Result<(), String> {
+    let json = serde_json::to_string(receipt).map_err(|_| "EXECUTION_RECEIPT_INVALID")?;
+    controller
+        .record_execution_phase(
+            &execution.gate.request.request_id,
+            operation_digest,
+            "verified",
+            None,
+            Some(&json),
+            now,
+        )
+        .map_err(|error| error.to_string())?;
+    controller
+        .record_execution_phase(
+            &execution.gate.request.request_id,
+            operation_digest,
+            "complete",
+            None,
+            Some(&json),
+            now,
+        )
+        .map_err(|error| error.to_string())
+}
+
+fn persist_complete(
+    controller: &Controller,
+    execution: &LocalApplyExecutionV1,
+    operation_digest: &str,
+    receipt: &ApplyLifecycleReceiptV1,
+    now: u64,
+) -> Result<(), String> {
+    let json = serde_json::to_string(receipt).map_err(|_| "EXECUTION_RECEIPT_INVALID")?;
+    controller
+        .record_execution_phase(
+            &execution.gate.request.request_id,
+            operation_digest,
+            "complete",
+            None,
+            Some(&json),
+            now,
+        )
+        .map_err(|error| error.to_string())
 }

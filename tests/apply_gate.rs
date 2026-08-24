@@ -47,7 +47,7 @@ fn authorized_execution_applies_then_independently_verifies() {
         &mut host,
         &LocalApplyExecutionV1 {
             schema_version: EXECUTION_SCHEMA.into(),
-            gate,
+            gate: gate.clone(),
         },
         now,
     )
@@ -55,6 +55,99 @@ fn authorized_execution_applies_then_independently_verifies() {
     assert_eq!(receipt.state, ExecutionState::Converged);
     assert_eq!(receipt.retry, RetryDisposition::NotNeeded);
     assert!(receipt.adapter_receipt.is_some());
+    assert!(receipt.verification_receipt.is_some());
+    let mut restarted_without_adapter = AdapterHost::new();
+    let duplicate = execute_authorized(
+        &controller,
+        &mut restarted_without_adapter,
+        &LocalApplyExecutionV1 {
+            schema_version: EXECUTION_SCHEMA.into(),
+            gate,
+        },
+        now,
+    )
+    .unwrap();
+    assert_eq!(duplicate.state, ExecutionState::Converged);
+    assert_eq!(duplicate.reason, receipt.reason);
+}
+
+#[test]
+fn restart_after_started_observes_before_any_retry() {
+    let now = 1_700_000_000;
+    let key = SigningKey::from_bytes(&[44; 32]);
+    let dir = tempfile::tempdir().unwrap();
+    let mut controller = controller_at_generation_one(&dir.path().join("controller.db"), &key, now);
+    let gate = gate(&key, OperatingMode::Confirm, now);
+    controller.authorize_apply_gate(&gate, now).unwrap();
+    let operation_digest = digest(&gate.operation).unwrap();
+    controller
+        .record_execution_phase(
+            &gate.request.request_id,
+            &operation_digest,
+            "started",
+            None,
+            None,
+            now,
+        )
+        .unwrap();
+    let mut adapter = SyntheticAdapter::new();
+    adapter.generation = gate.operation.expected_generation + 1;
+    adapter.state = gate.operation.desired.clone();
+    let mut host = AdapterHost::new();
+    host.register("target:finance", "synthetic-v1", Box::new(adapter));
+    let receipt = execute_authorized(
+        &controller,
+        &mut host,
+        &LocalApplyExecutionV1 {
+            schema_version: EXECUTION_SCHEMA.into(),
+            gate,
+        },
+        now,
+    )
+    .unwrap();
+    assert_eq!(receipt.state, ExecutionState::PartiallyConverged);
+    assert_eq!(receipt.reason, "EXECUTION_EFFECT_OBSERVED_AFTER_RESTART");
+    assert!(receipt.adapter_receipt.is_none());
+    assert!(receipt.verification_receipt.is_some());
+}
+
+#[test]
+fn restart_after_adapter_receipt_resumes_verification_only() {
+    let now = 1_700_000_000;
+    let key = SigningKey::from_bytes(&[45; 32]);
+    let dir = tempfile::tempdir().unwrap();
+    let mut controller = controller_at_generation_one(&dir.path().join("controller.db"), &key, now);
+    let gate = gate(&key, OperatingMode::Confirm, now);
+    let (_, authorized) = controller.authorize_apply_gate(&gate, now).unwrap();
+    let mut adapter = SyntheticAdapter::new();
+    adapter.generation = gate.operation.expected_generation;
+    let mut host = AdapterHost::new();
+    host.register("target:finance", "synthetic-v1", Box::new(adapter));
+    let applied = host.execute(&authorized, now).unwrap();
+    let operation_digest = digest(&gate.operation).unwrap();
+    let applied_json = serde_json::to_string(&applied).unwrap();
+    controller
+        .record_execution_phase(
+            &gate.request.request_id,
+            &operation_digest,
+            "adapter_reported",
+            Some(&applied_json),
+            None,
+            now,
+        )
+        .unwrap();
+    let receipt = execute_authorized(
+        &controller,
+        &mut host,
+        &LocalApplyExecutionV1 {
+            schema_version: EXECUTION_SCHEMA.into(),
+            gate,
+        },
+        now,
+    )
+    .unwrap();
+    assert_eq!(receipt.state, ExecutionState::Converged);
+    assert_eq!(receipt.adapter_receipt.unwrap(), applied);
     assert!(receipt.verification_receipt.is_some());
 }
 
