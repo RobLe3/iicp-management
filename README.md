@@ -53,6 +53,7 @@ cargo clippy --locked --all-targets -- -D warnings
 cargo run --locked --bin iicp-management-conformance
 python3 tools/run_management_conformance.py fixtures/management-portable-conformance-v1.json
 python3 tools/run_policy_lifecycle_conformance.py fixtures/policy-lifecycle-conformance-v1.json
+python3 tools/run_progressive_authority_conformance.py fixtures/progressive-authority-conformance-v1.json
 ```
 
 The conformance runner accepts an optional fixture path:
@@ -91,3 +92,7 @@ Observation, recommendation and execution are separate management claims.
 Shadow evaluation must not mutate accepted or target state, and a recommendation
 does not carry apply authority. See
 [`docs/ADR-002-progressive-operational-authority.md`](docs/ADR-002-progressive-operational-authority.md).
+The `progressive-authority-v1` contract records the operating mode, policy
+generation and evidence provenance. `may_request_apply` means only that the
+projection has the required plan, authorization evidence and satisfied policy
+boundary; the domain-local controller still makes the apply decision.

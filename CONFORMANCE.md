@@ -45,3 +45,20 @@ by this pack. An independent implementation should consume the fixture contract
 through its own lifecycle and evaluator code. Passing the reference checker is
 project evidence, not independent interoperability or permission to activate a
 policy in a deployed domain.
+
+## Progressive-authority profile
+
+The progressive-authority pack separates observation and counterfactual
+recommendation from confirmation and bounded automation:
+
+```bash
+python3 tools/run_progressive_authority_conformance.py \
+  fixtures/progressive-authority-conformance-v1.json \
+  --output /tmp/iicp-progressive-authority-report.json
+```
+
+The cases prove that observation and recommendation cannot request mutation,
+that confirmation requires exact plan and authorization evidence, and that
+automatic operation fails unless the policy boundary is satisfied. The
+projection is not an execution receipt. Passing it grants no management
+authority and does not prove that an apply occurred.
