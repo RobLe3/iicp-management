@@ -132,6 +132,42 @@ Exit status `0` means accepted, `3` means rejected and `5` means deferred.
 Deterministic input or authorization failures are never converted into a
 deferred result.
 
+## Apply preview and progressive authority
+
+An apply request remains separate from plan acceptance and target execution.
+The `iicp.management-apply-gate.v1` artifact binds one accepted plan and one
+capability-scoped operation to progressive-authority evidence and a separately
+signed authorization record. The authorization signature covers the exact
+plan, operation, policy generation, facts, audience, domain, mode and expiry.
+
+Preview is always non-mutating:
+
+```bash
+iicp-management preview-apply apply-request.json
+```
+
+Confirmation mode requires the exact operation identifier. There is no implicit
+yes flag:
+
+```bash
+iicp-management request-apply /run/user/$(id -u)/iicp-management.sock \
+  apply-request.json --confirm operation:finance
+```
+
+`automatic_within_policy` is the only non-interactive mode and requires the
+same signed authorization artifact:
+
+```bash
+iicp-management request-apply /run/user/$(id -u)/iicp-management.sock \
+  apply-request.json --non-interactive
+```
+
+Observation and recommendation evidence cannot request apply. A successful
+request records controller authorization and returns the operation and authority
+digests, but still reports `target_effect: not_attempted` and
+`convergence: not_evaluated`. Adapter execution belongs to a later lifecycle
+stage.
+
 ## Authority boundary
 
 The contracts do not grant management authority. A future domain-local

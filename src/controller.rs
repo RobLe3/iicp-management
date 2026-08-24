@@ -3,6 +3,9 @@ use crate::{
         validate_adapter_inspection, AdapterInspectionV1, AdapterOperation,
         AuthorizedAdapterOperation,
     },
+    apply_gate::{
+        authorization_signing_bytes, validate_apply_gate, LocalApplyGateV1, APPLY_GATE_SCHEMA,
+    },
     digest, ManagementError, Plan,
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
@@ -77,6 +80,59 @@ pub struct PlanSubmissionReceiptV1 {
     pub controller_generation: Option<u64>,
     pub target_effect: String,
     pub convergence: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ApplyAuthorizationReceiptV1 {
+    pub schema_version: String,
+    pub request_id: String,
+    pub decision: DecisionState,
+    pub reason: String,
+    pub controller_generation: Option<u64>,
+    pub operation_digest: String,
+    pub authority_context_digest: String,
+    pub target_effect: String,
+    pub convergence: String,
+}
+
+impl ApplyAuthorizationReceiptV1 {
+    fn from_controller(
+        receipt: ControllerReceipt,
+        operation_digest: String,
+        authority_context_digest: String,
+    ) -> Self {
+        Self {
+            schema_version: APPLY_GATE_SCHEMA.into(),
+            request_id: receipt.request_id,
+            decision: receipt.decision,
+            reason: receipt.reason,
+            controller_generation: Some(receipt.generation),
+            operation_digest,
+            authority_context_digest,
+            target_effect: "not_attempted".into(),
+            convergence: "not_evaluated".into(),
+        }
+    }
+
+    pub fn failure(
+        request_id: impl Into<String>,
+        decision: DecisionState,
+        reason: impl Into<String>,
+        generation: Option<u64>,
+    ) -> Self {
+        Self {
+            schema_version: APPLY_GATE_SCHEMA.into(),
+            request_id: request_id.into(),
+            decision,
+            reason: reason.into(),
+            controller_generation: generation,
+            operation_digest: String::new(),
+            authority_context_digest: String::new(),
+            target_effect: "not_attempted".into(),
+            convergence: "not_evaluated".into(),
+        }
+    }
 }
 
 impl PlanSubmissionReceiptV1 {
@@ -269,6 +325,8 @@ pub enum ControllerError {
     Storage,
     #[error("REQUEST_ADAPTER_BINDING_INVALID")]
     AdapterBinding,
+    #[error("REQUEST_APPLY_GATE_INVALID")]
+    ApplyGate,
     #[error(transparent)]
     Core(#[from] ManagementError),
 }
@@ -437,6 +495,7 @@ impl Controller {
             || request.resource_ids[0] != operation.target_id
             || request.payload_digest != operation.desired_digest
             || request.plan_digest != operation.plan_digest
+            || request.expected_generation != operation.expected_generation
             || operation.expires_at > request.expires_at
         {
             return Err(ControllerError::AdapterBinding);
@@ -445,6 +504,39 @@ impl Controller {
         Ok((
             receipt,
             AuthorizedAdapterOperation::from_controller(operation),
+        ))
+    }
+    pub fn authorize_apply_gate(
+        &mut self,
+        gate: &LocalApplyGateV1,
+        now: u64,
+    ) -> Result<(ApplyAuthorizationReceiptV1, AuthorizedAdapterOperation), ControllerError> {
+        validate_apply_gate(gate, now).map_err(|_| ControllerError::ApplyGate)?;
+        let signature = Signature::from_slice(
+            &STANDARD
+                .decode(&gate.authorization.signature)
+                .map_err(|_| ControllerError::Signature)?,
+        )
+        .map_err(|_| ControllerError::Signature)?;
+        self.verifying_key
+            .verify(
+                &authorization_signing_bytes(&gate.authorization)
+                    .map_err(|_| ControllerError::ApplyGate)?,
+                &signature,
+            )
+            .map_err(|_| ControllerError::Signature)?;
+        let operation_digest = digest(&gate.operation).map_err(ControllerError::Core)?;
+        let authority_context_digest =
+            digest(&gate.authorization).map_err(ControllerError::Core)?;
+        let (receipt, operation) =
+            self.authorize_adapter_operation(&gate.request, gate.operation.clone(), now)?;
+        Ok((
+            ApplyAuthorizationReceiptV1::from_controller(
+                receipt,
+                operation_digest,
+                authority_context_digest,
+            ),
+            operation,
         ))
     }
     pub fn accept_plan_submission(

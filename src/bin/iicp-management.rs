@@ -1,13 +1,15 @@
 use iicp_management_core::adapters::{validate_adapter_inspection, AdapterInspectionV1};
+use iicp_management_core::apply_gate::{preview_apply, LocalApplyGateV1};
 use iicp_management_core::controller::{
     attach_adapter_inspection, inspect_controller_database, validate_plan_submission, Controller,
     DecisionState, LocalPlanSubmissionV1,
 };
-use iicp_management_core::ipc::submit_plan;
+use iicp_management_core::ipc::{request_apply, submit_plan};
 use iicp_management_core::policy_lifecycle::{
     simulate_policy_change, ApplicationBindingV1, InMemoryPolicyRepository, PolicyActivationV1,
     PolicyRepository, PolicyRevisionV1, PolicySetV1,
 };
+use iicp_management_core::progressive_authority::OperatingMode;
 use iicp_management_core::{
     plan, validate_bundle, verify_receipt, AcceptedState, DesiredStateBundle, Plan, Receipt,
 };
@@ -64,12 +66,14 @@ fn emit<T: Serialize>(value: &T, json_output: bool, summary: impl FnOnce() -> St
 }
 
 fn usage() -> &'static str {
-    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|submit-plan|controller|evidence> ...\n\
+    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|submit-plan|preview-apply|request-apply|controller|evidence> ...\n\
 validate <bundle.json>\nplan <bundle.json> <accepted.json>\ndiff <plan.json>\nsimulate <current-workspace.json> <proposed-workspace.json> <facts.json> <binding-id>\n\
 show <stored-policies|active-policies|effective-policy> <workspace.json> [facts.json] [binding-id]\n\
 explain decision <workspace.json> <facts.json> <binding-id> <intent> <decision-id>\n\
 verify-receipt <receipt.json> <plan.json> <audience>\nadapter inspect <adapter-inspection.json>\n\
 submit-plan <socket-or-pipe> <submission.json>\n\
+preview-apply <apply-request.json>\n\
+request-apply <socket-or-pipe> <apply-request.json> <--confirm operation-id|--non-interactive>\n\
 controller status <controller.db> [adapter-inspection.json]\nevidence export <controller.db> [adapter-inspection.json]"
 }
 
@@ -235,6 +239,64 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                 _ => return Err("SUBMISSION_UNKNOWN".into()),
             }
         }
+        Some("preview-apply") => {
+            let a = require(&args[1..], 1)?;
+            let gate: LocalApplyGateV1 = read(&a[0])?;
+            let output = preview_apply(&gate, Controller::now()).map_err(|e| e.to_string())?;
+            let target = output.target_id.clone();
+            let action = output.action.clone();
+            let before = output.before_digest.clone();
+            let after = output.after_digest.clone();
+            let generation = output.controller_generation;
+            let policy_generation = output.policy_generation;
+            let mode = output.mode.clone();
+            emit(&output, json_output, || {
+                format!(
+                    "Apply preview\nTarget: {target}\nAction: {action}\nChange: {before} -> {after}\nController generation: {generation}\nPolicy generation: {policy_generation}\nMode: {mode:?}"
+                )
+            });
+        }
+        Some("request-apply") => {
+            if !(args.len() == 4 || args.len() == 5) {
+                return Err("USAGE_INVALID".into());
+            }
+            let gate: LocalApplyGateV1 = read(&args[2])?;
+            let preview = preview_apply(&gate, Controller::now()).map_err(|e| e.to_string())?;
+            match gate.progressive_authority.mode {
+                OperatingMode::Confirm => {
+                    if args.len() != 5
+                        || args[3] != "--confirm"
+                        || args[4] != gate.operation.operation_id
+                    {
+                        return Err("APPLY_CONFIRMATION_REQUIRED".into());
+                    }
+                }
+                OperatingMode::AutomaticWithinPolicy => {
+                    if args.len() != 4 || args[3] != "--non-interactive" {
+                        return Err("APPLY_AUTOMATION_AUTHORIZATION_REQUIRED".into());
+                    }
+                }
+                _ => return Err("APPLY_MODE_NOT_AUTHORIZED".into()),
+            }
+            let output = request_apply(Path::new(&args[1]), &gate)?;
+            let decision = output.decision.clone();
+            let reason = output.reason.clone();
+            let target = preview.target_id;
+            emit(&output, json_output, || match decision {
+                DecisionState::Accepted => {
+                    format!("Apply request for {target} authorized; no target action was attempted")
+                }
+                DecisionState::Rejected => format!("Apply request rejected: {reason}"),
+                DecisionState::Deferred => format!("Apply request deferred: {reason}"),
+                _ => format!("Apply request returned {decision:?}: {reason}"),
+            });
+            match output.decision {
+                DecisionState::Accepted => {}
+                DecisionState::Rejected => return Err("SUBMISSION_REJECTED".into()),
+                DecisionState::Deferred => return Err("SUBMISSION_DEFERRED".into()),
+                _ => return Err("SUBMISSION_UNKNOWN".into()),
+            }
+        }
         Some("adapter") if args.get(1).map(String::as_str) == Some("inspect") => {
             let a = require(&args[2..], 1)?;
             let output: AdapterInspectionV1 = read(&a[0])?;
@@ -298,6 +360,7 @@ fn main() -> ExitCode {
             ExitCode::from(if error.starts_with("INPUT_") || error == "USAGE_INVALID" {
                 2
             } else if error == "SUBMISSION_REJECTED"
+                || error.starts_with("APPLY_")
                 || error.contains("DENY")
                 || error.contains("UNSUPPORTED")
             {

@@ -1,5 +1,7 @@
+use iicp_management_core::apply_gate::LocalApplyGateV1;
 use iicp_management_core::controller::{
-    Controller, ControllerPolicy, LocalPlanSubmissionV1, ManagementRequest,
+    ApplyAuthorizationReceiptV1, Controller, ControllerPolicy, LocalPlanSubmissionV1,
+    ManagementRequest,
 };
 use iicp_management_core::controller::{DecisionState, PlanSubmissionReceiptV1};
 use serde::Deserialize;
@@ -40,13 +42,40 @@ fn open(db: &Path, key: &Path, audience: String, domain: String) -> Result<Contr
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum WireRequest {
-    Plan(LocalPlanSubmissionV1),
-    Legacy(ManagementRequest),
+    Apply(Box<LocalApplyGateV1>),
+    Plan(Box<LocalPlanSubmissionV1>),
+    Legacy(Box<ManagementRequest>),
 }
 
 fn process(controller: &mut Controller, line: &str) -> String {
     match serde_json::from_str::<WireRequest>(line) {
+        Ok(WireRequest::Apply(gate)) => {
+            match controller.authorize_apply_gate(&gate, Controller::now()) {
+                Ok((receipt, _)) => serde_json::to_string(&receipt).unwrap(),
+                Err(error) => {
+                    let decision = if error.to_string() == "STORAGE_ERROR" {
+                        DecisionState::Deferred
+                    } else {
+                        DecisionState::Rejected
+                    };
+                    serde_json::to_string(&ApplyAuthorizationReceiptV1::failure(
+                        gate.request.request_id,
+                        decision,
+                        error.to_string(),
+                        controller.generation().ok(),
+                    ))
+                    .unwrap()
+                }
+            }
+        }
         Ok(WireRequest::Legacy(request)) => {
+            if request.action == "apply" {
+                return serde_json::json!({
+                    "decision":"rejected",
+                    "reason":"REQUEST_APPLY_GATE_REQUIRED"
+                })
+                .to_string();
+            }
             match controller.evaluate(&request, Controller::now()) {
                 Ok(receipt) => serde_json::to_string(&receipt).unwrap(),
                 Err(error) => serde_json::json!({"decision":"rejected","reason":error.to_string()})

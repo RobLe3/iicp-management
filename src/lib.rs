@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 use thiserror::Error;
 
 pub mod adapters;
+pub mod apply_gate;
 pub mod controller;
 pub mod ipc;
 pub mod policy_lifecycle;

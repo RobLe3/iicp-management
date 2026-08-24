@@ -1,3 +1,5 @@
+use crate::apply_gate::LocalApplyGateV1;
+use crate::controller::ApplyAuthorizationReceiptV1;
 use crate::controller::{LocalPlanSubmissionV1, PlanSubmissionReceiptV1};
 use std::{
     io::{BufRead, BufReader, Read, Write},
@@ -23,6 +25,23 @@ pub fn submit_plan(
     exchange(&mut stream, submission)
 }
 
+#[cfg(unix)]
+pub fn request_apply(
+    endpoint: &Path,
+    gate: &LocalApplyGateV1,
+) -> Result<ApplyAuthorizationReceiptV1, String> {
+    use std::{os::unix::net::UnixStream, time::Duration};
+
+    let mut stream = UnixStream::connect(endpoint).map_err(|_| "IPC_CONNECT_FAILED".to_string())?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .map_err(|_| "IPC_TIMEOUT_CONFIGURATION_FAILED".to_string())?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(5)))
+        .map_err(|_| "IPC_TIMEOUT_CONFIGURATION_FAILED".to_string())?;
+    exchange(&mut stream, gate)
+}
+
 #[cfg(windows)]
 pub fn submit_plan(
     endpoint: &Path,
@@ -42,15 +61,42 @@ pub fn submit_plan(
     exchange(&mut stream, submission)
 }
 
+#[cfg(windows)]
+pub fn request_apply(
+    endpoint: &Path,
+    gate: &LocalApplyGateV1,
+) -> Result<ApplyAuthorizationReceiptV1, String> {
+    use std::fs::OpenOptions;
+
+    let name = endpoint.to_str().ok_or("IPC_ENDPOINT_INVALID")?;
+    if !name.starts_with(r"\\.\pipe\") || name.len() <= r"\\.\pipe\".len() {
+        return Err("IPC_ENDPOINT_INVALID".into());
+    }
+    let mut stream = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(endpoint)
+        .map_err(|_| "IPC_CONNECT_FAILED".to_string())?;
+    exchange(&mut stream, gate)
+}
+
 #[cfg(not(any(unix, windows)))]
 pub fn submit_plan(_: &Path, _: &LocalPlanSubmissionV1) -> Result<PlanSubmissionReceiptV1, String> {
     Err("IPC_UNSUPPORTED_PLATFORM".into())
 }
 
-fn exchange<S: std::io::Read + Write>(
+#[cfg(not(any(unix, windows)))]
+pub fn request_apply(
+    _: &Path,
+    _: &LocalApplyGateV1,
+) -> Result<ApplyAuthorizationReceiptV1, String> {
+    Err("IPC_UNSUPPORTED_PLATFORM".into())
+}
+
+fn exchange<S: std::io::Read + Write, Q: serde::Serialize, R: serde::de::DeserializeOwned>(
     stream: &mut S,
-    submission: &LocalPlanSubmissionV1,
-) -> Result<PlanSubmissionReceiptV1, String> {
+    submission: &Q,
+) -> Result<R, String> {
     let request = serde_json::to_string(submission).map_err(|_| "IPC_REQUEST_INVALID")?;
     if request.len() > MAX_RESPONSE_BYTES as usize {
         return Err("IPC_REQUEST_TOO_LARGE".into());
