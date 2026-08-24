@@ -1,0 +1,55 @@
+{
+  "schema": "iicp.management-policy-lifecycle.cases.v1",
+  "version": "1",
+  "evidence_class": "project-verified",
+  "cases": [
+    {
+      "id": "PL1-REVISION-ACCEPT",
+      "operation": "validate_revision",
+      "input": {"schema_version":"1","policy_id":"policy:baseline","revision_id":"r1","authority":"domain:test","scope":"application:test","disposition":"stored","policy":{"eq":["member",true]},"valid_from":100,"valid_until":200,"extensions":[]},
+      "expected": {"result":"accept"}
+    },
+    {
+      "id": "PL1-REVISION-WINDOW-REJECT",
+      "operation": "validate_revision",
+      "input": {"schema_version":"1","policy_id":"policy:baseline","revision_id":"r1","authority":"domain:test","scope":"application:test","disposition":"stored","policy":{"eq":["member",true]},"valid_from":200,"valid_until":100,"extensions":[]},
+      "expected": {"result":"reject","reason":"POLICY_INVALID_VALIDITY"}
+    },
+    {
+      "id": "PL1-BINDING-DUPLICATE-ORDER",
+      "operation": "validate_binding",
+      "input": {"schema_version":"1","binding_id":"binding:finance","application_id":"application:finance","authority":"domain:test","policies":[{"policy_id":"policy:a","revision_id":"r1","authority_rank":100,"mandatory":true,"order":1},{"policy_id":"policy:b","revision_id":"r1","authority_rank":50,"mandatory":false,"order":1}],"policy_sets":[],"extensions":[]},
+      "expected": {"result":"reject","reason":"POLICY_DUPLICATE_MEMBER"}
+    },
+    {
+      "id": "PL1-EFFECTIVE-DENY-WINS",
+      "operation": "compose",
+      "input": {"facts":{"member":true,"region":"US"},"sources":[{"policy_id":"policy:allow","revision_id":"r1","authority_rank":10,"mandatory":false,"order":2,"policy":{"eq":["member",true]}},{"policy_id":"policy:region","revision_id":"r1","authority_rank":100,"mandatory":true,"order":1,"policy":{"eq":["region","EU"]}}]},
+      "expected": {"decision":"deny","ordered_policy_ids":["policy:region","policy:allow"]}
+    },
+    {
+      "id": "PL1-EFFECTIVE-MANDATORY-UNKNOWN",
+      "operation": "compose",
+      "input": {"facts":{"effective_capabilities":null},"sources":[{"policy_id":"policy:capability","revision_id":"r1","authority_rank":100,"mandatory":true,"order":1,"policy":{"contains":["effective_capabilities","input.text"]}}]},
+      "expected": {"decision":"indeterminate","ordered_policy_ids":["policy:capability"]}
+    },
+    {
+      "id": "PL1-ACTIVATION-STALE",
+      "operation": "validate_activation_generation",
+      "input": {"current_generation":4,"expected_generation":3,"target_generation":4},
+      "expected": {"result":"reject","reason":"POLICY_STALE_GENERATION"}
+    },
+    {
+      "id": "PL1-ACTIVATION-ACCEPT",
+      "operation": "validate_activation_generation",
+      "input": {"current_generation":4,"expected_generation":4,"target_generation":5},
+      "expected": {"result":"accept"}
+    },
+    {
+      "id": "PL1-SIMULATION-NEW-ALLOW",
+      "operation": "simulate_decision_change",
+      "input": {"current":"deny","proposed":"allow"},
+      "expected": {"decision_changed":true,"newly_allowed":true,"newly_denied":false}
+    }
+  ]
+}
