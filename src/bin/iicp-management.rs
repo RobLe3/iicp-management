@@ -1,4 +1,7 @@
-use iicp_management_core::controller::inspect_controller_database;
+use iicp_management_core::adapters::{validate_adapter_inspection, AdapterInspectionV1};
+use iicp_management_core::controller::{
+    attach_adapter_inspection, inspect_controller_database, Controller,
+};
 use iicp_management_core::policy_lifecycle::{
     simulate_policy_change, ApplicationBindingV1, InMemoryPolicyRepository, PolicyActivationV1,
     PolicyRepository, PolicyRevisionV1, PolicySetV1,
@@ -63,7 +66,8 @@ fn usage() -> &'static str {
 validate <bundle.json>\nplan <bundle.json> <accepted.json>\ndiff <plan.json>\nsimulate <current-workspace.json> <proposed-workspace.json> <facts.json> <binding-id>\n\
 show <stored-policies|active-policies|effective-policy> <workspace.json> [facts.json] [binding-id]\n\
 explain decision <workspace.json> <facts.json> <binding-id> <intent> <decision-id>\n\
-verify-receipt <receipt.json> <plan.json> <audience>\ncontroller status <controller.db>\nevidence export <controller.db>"
+verify-receipt <receipt.json> <plan.json> <audience>\nadapter inspect <adapter-inspection.json>\n\
+controller status <controller.db> [adapter-inspection.json]\nevidence export <controller.db> [adapter-inspection.json]"
 }
 
 fn require(args: &[String], count: usize) -> Result<&[String], String> {
@@ -204,20 +208,46 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                 )
             });
         }
-        Some("controller") if args.get(1).map(String::as_str) == Some("status") => {
+        Some("adapter") if args.get(1).map(String::as_str) == Some("inspect") => {
             let a = require(&args[2..], 1)?;
-            let output =
-                inspect_controller_database(Path::new(&a[0]), 20).map_err(|e| e.to_string())?;
+            let output: AdapterInspectionV1 = read(&a[0])?;
+            validate_adapter_inspection(&output, &BTreeSet::new(), Controller::now(), 60)
+                .map_err(|e| e.to_string())?;
+            let count = output.entries.len();
+            emit(&output, json_output, || {
+                format!("Adapter inspection valid: {count} target binding(s)")
+            });
+        }
+        Some("controller") if args.get(1).map(String::as_str) == Some("status") => {
+            if !(args.len() == 3 || args.len() == 4) {
+                return Err("USAGE_INVALID".into());
+            }
+            let mut output =
+                inspect_controller_database(Path::new(&args[2]), 20).map_err(|e| e.to_string())?;
+            if let Some(path) = args.get(3) {
+                let inspection: AdapterInspectionV1 = read(path)?;
+                output = attach_adapter_inspection(output, inspection, Controller::now())
+                    .map_err(|e| e.to_string())?;
+            }
             let generation = output.generation;
             let decisions = output.recent_decisions.len();
+            let observed = output.observed_state.clone();
+            let effective = output.effective_state.clone();
             emit(&output, json_output, || {
-                format!("Controller generation: {generation}\nRecent decisions: {decisions}\nTarget state: not reported by controller store")
+                format!("Controller generation: {generation}\nRecent decisions: {decisions}\nObserved state: {observed}\nEffective state: {effective}")
             });
         }
         Some("evidence") if args.get(1).map(String::as_str) == Some("export") => {
-            let a = require(&args[2..], 1)?;
-            let output =
-                inspect_controller_database(Path::new(&a[0]), 100).map_err(|e| e.to_string())?;
+            if !(args.len() == 3 || args.len() == 4) {
+                return Err("USAGE_INVALID".into());
+            }
+            let mut output =
+                inspect_controller_database(Path::new(&args[2]), 100).map_err(|e| e.to_string())?;
+            if let Some(path) = args.get(3) {
+                let inspection: AdapterInspectionV1 = read(path)?;
+                output = attach_adapter_inspection(output, inspection, Controller::now())
+                    .map_err(|e| e.to_string())?;
+            }
             emit(&output, true, String::new);
         }
         _ => return Err("USAGE_INVALID".into()),

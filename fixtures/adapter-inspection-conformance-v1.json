@@ -1,0 +1,16 @@
+{
+  "schema":"iicp.management-adapter-inspection.cases.v1",
+  "version":"1",
+  "evidence_class":"project-verified",
+  "now":1000,
+  "clock_skew":60,
+  "cases":[
+    {"id":"AI1-VALID-CONVERGED","input":{"schema_version":"1","evidence_class":"adapter_host_observation","evidence_source":"domain_local_adapter_host","authorizes_mutation":false,"observed_at":990,"expires_at":1100,"entries":[{"target_id":"target:a","registered_capability":"synthetic-v1","advertised_capabilities":["synthetic-v1"],"descriptor_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","observation_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","observed_generation":4,"convergence_state":"converged","reason_code":"ADAPTER_RECEIPT_REPORTED"}],"extensions":[]},"expected":"accept"},
+    {"id":"AI1-MUTATION-AUTHORITY","input":{"schema_version":"1","evidence_class":"adapter_host_observation","evidence_source":"domain_local_adapter_host","authorizes_mutation":true,"observed_at":990,"expires_at":1100,"entries":[],"extensions":[]},"expected":"reject"},
+    {"id":"AI1-STALE","input":{"schema_version":"1","evidence_class":"adapter_host_observation","evidence_source":"domain_local_adapter_host","authorizes_mutation":false,"observed_at":800,"expires_at":900,"entries":[],"extensions":[]},"expected":"reject"},
+    {"id":"AI1-FUTURE","input":{"schema_version":"1","evidence_class":"adapter_host_observation","evidence_source":"domain_local_adapter_host","authorizes_mutation":false,"observed_at":1061,"expires_at":1100,"entries":[],"extensions":[]},"expected":"reject"},
+    {"id":"AI1-BAD-DIGEST","input":{"schema_version":"1","evidence_class":"adapter_host_observation","evidence_source":"domain_local_adapter_host","authorizes_mutation":false,"observed_at":990,"expires_at":1100,"entries":[{"target_id":"target:a","registered_capability":"synthetic-v1","advertised_capabilities":["synthetic-v1"],"descriptor_digest":"sha256:bad","reason_code":"ADAPTER_OBSERVED_NO_CONVERGENCE_RECEIPT"}],"extensions":[]},"expected":"reject"},
+    {"id":"AI1-DUPLICATE-BINDING","input":{"schema_version":"1","evidence_class":"adapter_host_observation","evidence_source":"domain_local_adapter_host","authorizes_mutation":false,"observed_at":990,"expires_at":1100,"entries":[{"target_id":"target:a","registered_capability":"synthetic-v1","advertised_capabilities":["synthetic-v1"],"descriptor_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","reason_code":"ADAPTER_OBSERVED_NO_CONVERGENCE_RECEIPT"},{"target_id":"target:a","registered_capability":"synthetic-v1","advertised_capabilities":["synthetic-v1"],"descriptor_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","reason_code":"ADAPTER_OBSERVED_NO_CONVERGENCE_RECEIPT"}],"extensions":[]},"expected":"reject"},
+    {"id":"AI1-UNKNOWN-REQUIRED","input":{"schema_version":"1","evidence_class":"adapter_host_observation","evidence_source":"domain_local_adapter_host","authorizes_mutation":false,"observed_at":990,"expires_at":1100,"entries":[],"extensions":[{"id":"unknown","class":"REQUIRED_SECURITY_CRITICAL"}]},"expected":"reject"}
+  ]
+}

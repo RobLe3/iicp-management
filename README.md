@@ -54,6 +54,7 @@ cargo run --locked --bin iicp-management-conformance
 python3 tools/run_management_conformance.py fixtures/management-portable-conformance-v1.json
 python3 tools/run_policy_lifecycle_conformance.py fixtures/policy-lifecycle-conformance-v1.json
 python3 tools/run_progressive_authority_conformance.py fixtures/progressive-authority-conformance-v1.json
+python3 tools/run_adapter_inspection_conformance.py fixtures/adapter-inspection-conformance-v1.json
 ```
 
 The conformance runner accepts an optional fixture path:
@@ -94,6 +95,19 @@ cargo run --locked --bin iicp-management -- controller status controller.db
 See [`examples/finance`](examples/finance/README.md) for a complete disposable
 workflow. These commands do not authorize or apply changes. Command text and
 formatted output are projections; JSON management artifacts remain canonical.
+
+Adapter hosts can emit `adapter-inspection-v1` evidence containing bounded
+capabilities, observation digests, generations and convergence receipts. The
+CLI can combine this artifact with the controller's read-only snapshot:
+
+```bash
+iicp-management controller status controller.db adapter-inspection.json
+iicp-management evidence export controller.db adapter-inspection.json
+```
+
+Missing adapter evidence remains `not_reported`. Observation without a receipt
+is not called convergence, generation disagreement remains visible, and the
+combined projection never carries apply authority.
 
 ## Authority boundary
 
