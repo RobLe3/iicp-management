@@ -234,3 +234,6 @@ generic rollback. An adapter that has no explicit implementation returns a
 typed failure and a safe next action. Receipts distinguish `reversed`,
 `compensated`, `safed`, `partially_recovered`, `deferred`, and `failed`.
 Externally visible effects remain part of history even after compensation.
+
+For the disposable restart and recovery rehearsal, see
+[`docs/AUTHORIZED_LOCAL_APPLY_RUNBOOK.md`](docs/AUTHORIZED_LOCAL_APPLY_RUNBOOK.md).
