@@ -84,3 +84,10 @@ Other services may consume these contracts but cannot widen domain-local policy
 or become undeclared IICP protocol authority. Product workflows, analytics, IAM
 integrations, managed operations and product-specific interfaces remain outside
 this repository.
+
+## Progressive adoption
+
+Observation, recommendation and execution are separate management claims.
+Shadow evaluation must not mutate accepted or target state, and a recommendation
+does not carry apply authority. See
+[`docs/ADR-002-progressive-operational-authority.md`](docs/ADR-002-progressive-operational-authority.md).

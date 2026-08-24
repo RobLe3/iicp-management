@@ -14,6 +14,7 @@ administrator, or product-specific operator experiences.
 | Application binding | The association between an application attachment and one or more policy revisions | Upstream application behavior |
 | Request connector | Translation of an upstream request into bounded IICP request and policy context | Policy definition or authority expansion |
 | Integration adapter | Capability-scoped observation and application of an authorized local plan | Unbounded host control, restart authority or secret transport |
+| Adoption projection | Evidence-bound observation, recommendation and friction measurements | Trust establishment, approval or mutation authority |
 
 ## State flow
 
@@ -41,6 +42,11 @@ Desired, accepted, observed and effective state remain distinct. Command text,
 a graphical interface or an automation client is not canonical policy state.
 All clients must use the same typed contracts and remain subject to local
 authorization.
+
+Operating mode is also separate from authority. `OBSERVE` and `RECOMMEND` are
+non-mutating projections. `CONFIRM` and `AUTOMATIC_WITHIN_POLICY` still require
+an exact authorized plan and domain-local acceptance; changing a client setting
+cannot widen that authority.
 
 ## Integration boundaries
 
