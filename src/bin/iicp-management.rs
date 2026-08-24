@@ -5,12 +5,18 @@ use iicp_management_core::controller::{
     DecisionState, LocalPlanSubmissionV1,
 };
 use iicp_management_core::execution::{LocalApplyExecutionV1, EXECUTION_SCHEMA};
-use iicp_management_core::ipc::{execute_apply, request_apply, submit_plan};
+use iicp_management_core::ipc::{
+    execute_apply, execute_recovery, request_apply, request_recovery, submit_plan,
+};
 use iicp_management_core::policy_lifecycle::{
     simulate_policy_change, ApplicationBindingV1, InMemoryPolicyRepository, PolicyActivationV1,
     PolicyRepository, PolicyRevisionV1, PolicySetV1,
 };
 use iicp_management_core::progressive_authority::OperatingMode;
+use iicp_management_core::recovery::{
+    validate_recovery_gate, LocalRecoveryExecutionV1, LocalRecoveryGateV1,
+    RECOVERY_EXECUTION_SCHEMA,
+};
 use iicp_management_core::{
     plan, validate_bundle, verify_receipt, AcceptedState, DesiredStateBundle, Plan, Receipt,
 };
@@ -67,7 +73,7 @@ fn emit<T: Serialize>(value: &T, json_output: bool, summary: impl FnOnce() -> St
 }
 
 fn usage() -> &'static str {
-    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|submit-plan|preview-apply|request-apply|execute-apply|controller|evidence> ...\n\
+    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|controller|evidence> ...\n\
 validate <bundle.json>\nplan <bundle.json> <accepted.json>\ndiff <plan.json>\nsimulate <current-workspace.json> <proposed-workspace.json> <facts.json> <binding-id>\n\
 show <stored-policies|active-policies|effective-policy> <workspace.json> [facts.json] [binding-id]\n\
 explain decision <workspace.json> <facts.json> <binding-id> <intent> <decision-id>\n\
@@ -76,6 +82,9 @@ submit-plan <socket-or-pipe> <submission.json>\n\
 preview-apply <apply-request.json>\n\
 request-apply <socket-or-pipe> <apply-request.json> <--confirm operation-id|--non-interactive>\n\
 execute-apply <socket-or-pipe> <apply-request.json> <--confirm operation-id|--non-interactive>\n\
+preview-recovery <recovery-request.json>\n\
+request-recovery <socket-or-pipe> <recovery-request.json> <--confirm operation-id|--non-interactive>\n\
+execute-recovery <socket-or-pipe> <recovery-request.json> <--confirm operation-id|--non-interactive>\n\
 controller status <controller.db> [adapter-inspection.json]\nevidence export <controller.db> [adapter-inspection.json]"
 }
 
@@ -329,6 +338,60 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
             emit(&output, json_output, || {
                 format!("Execution for {target}: {state:?} ({reason})")
             });
+        }
+        Some("preview-recovery") => {
+            let a = require(&args[1..], 1)?;
+            let gate: LocalRecoveryGateV1 = read(&a[0])?;
+            validate_recovery_gate(&gate, Controller::now())?;
+            let output = json!({
+                "operation_id": gate.operation.operation_id,
+                "target_id": gate.operation.target_id,
+                "strategy": gate.strategy,
+                "expected_generation": gate.operation.expected_generation,
+                "expected_result_digest": gate.operation.desired_digest,
+                "authorizes_mutation": false
+            });
+            emit(&output, json_output, || {
+                "Recovery preview valid; no target action attempted".into()
+            });
+        }
+        command @ (Some("request-recovery") | Some("execute-recovery")) => {
+            if !(args.len() == 4 || args.len() == 5) {
+                return Err("USAGE_INVALID".into());
+            }
+            let gate: LocalRecoveryGateV1 = read(&args[2])?;
+            validate_recovery_gate(&gate, Controller::now())?;
+            match gate.progressive_authority.mode {
+                OperatingMode::Confirm
+                    if args.len() == 5
+                        && args[3] == "--confirm"
+                        && args[4] == gate.operation.operation_id => {}
+                OperatingMode::AutomaticWithinPolicy
+                    if args.len() == 4 && args[3] == "--non-interactive" => {}
+                OperatingMode::Confirm => return Err("RECOVERY_CONFIRMATION_REQUIRED".into()),
+                OperatingMode::AutomaticWithinPolicy => {
+                    return Err("RECOVERY_AUTOMATION_AUTHORIZATION_REQUIRED".into())
+                }
+                _ => return Err("RECOVERY_MODE_NOT_AUTHORIZED".into()),
+            }
+            if command == Some("request-recovery") {
+                let output = request_recovery(Path::new(&args[1]), &gate)?;
+                emit(&output, json_output, || {
+                    format!(
+                        "Recovery {} authorized; no target action attempted",
+                        gate.operation.operation_id
+                    )
+                });
+            } else {
+                let execution = LocalRecoveryExecutionV1 {
+                    schema_version: RECOVERY_EXECUTION_SCHEMA.into(),
+                    gate,
+                };
+                let output = execute_recovery(Path::new(&args[1]), &execution)?;
+                emit(&output, json_output, || {
+                    format!("Recovery {}: {:?}", output.operation_id, output.outcome)
+                });
+            }
         }
         Some("adapter") if args.get(1).map(String::as_str) == Some("inspect") => {
             let a = require(&args[2..], 1)?;

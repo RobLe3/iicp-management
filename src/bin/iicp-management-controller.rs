@@ -8,6 +8,9 @@ use iicp_management_core::controller::{DecisionState, PlanSubmissionReceiptV1};
 use iicp_management_core::execution::{
     execute_authorized, ApplyLifecycleReceiptV1, LocalApplyExecutionV1,
 };
+use iicp_management_core::recovery::{
+    execute_recovery_request, LocalRecoveryExecutionV1, LocalRecoveryGateV1,
+};
 use serde::Deserialize;
 #[cfg(unix)]
 use std::io::{BufRead, BufReader, Read, Write};
@@ -29,6 +32,8 @@ fn open(db: &Path, key: &Path, audience: String, domain: String) -> Result<Contr
                 "apply".into(),
                 "observe".into(),
                 "rollback".into(),
+                "compensate".into(),
+                "safe".into(),
             ]),
             revocation_checkpoint: Controller::now(),
             max_checkpoint_age: 3600,
@@ -36,6 +41,8 @@ fn open(db: &Path, key: &Path, audience: String, domain: String) -> Result<Contr
                 "accept_plan".into(),
                 "apply".into(),
                 "rollback".into(),
+                "compensate".into(),
+                "safe".into(),
             ]),
             max_decision_events: 10_000,
         },
@@ -46,6 +53,8 @@ fn open(db: &Path, key: &Path, audience: String, domain: String) -> Result<Contr
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum WireRequest {
+    RecoveryExecute(Box<LocalRecoveryExecutionV1>),
+    Recovery(Box<LocalRecoveryGateV1>),
     Execute(Box<LocalApplyExecutionV1>),
     Apply(Box<LocalApplyGateV1>),
     Plan(Box<LocalPlanSubmissionV1>),
@@ -54,6 +63,19 @@ enum WireRequest {
 
 fn process(controller: &mut Controller, host: &mut Option<AdapterHost>, line: &str) -> String {
     match serde_json::from_str::<WireRequest>(line) {
+        Ok(WireRequest::RecoveryExecute(execution)) => match host.as_mut() {
+            Some(host) => match execute_recovery_request(controller, host, &execution, Controller::now()) {
+                Ok(receipt) => serde_json::to_string(&receipt).unwrap(),
+                Err(error) => serde_json::json!({"schema_version":"iicp.management-local-recovery.v1","operation_id":execution.gate.operation.operation_id,"outcome":"failed","reason":error,"safe_next_action":"REAUTHORIZE_OR_REVIEW"}).to_string(),
+            },
+            None => serde_json::json!({"schema_version":"iicp.management-local-recovery.v1","operation_id":execution.gate.operation.operation_id,"outcome":"failed","reason":"EXECUTOR_NOT_CONFIGURED","safe_next_action":"START_CONFIGURED_EXECUTOR"}).to_string(),
+        },
+        Ok(WireRequest::Recovery(gate)) => match controller.authorize_recovery_gate(&gate, Controller::now()) {
+            Ok((receipt, _)) => serde_json::to_string(&receipt).unwrap(),
+            Err(error) => serde_json::to_string(&ApplyAuthorizationReceiptV1::failure(
+                gate.request.request_id, DecisionState::Rejected, error.to_string(), controller.generation().ok(),
+            )).unwrap(),
+        },
         Ok(WireRequest::Execute(execution)) => match host.as_mut() {
             Some(host) => match execute_authorized(controller, host, &execution, Controller::now())
             {

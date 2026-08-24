@@ -219,3 +219,18 @@ independent verification evidence. A timeout, I/O interruption or unknown
 adapter outcome is observed before any retry decision and is reported as
 `deferred`; this slice never retries an apply automatically. Full crash recovery,
 rollback orchestration and fleet deployment remain separate later milestones.
+
+### Truthful recovery
+
+Recovery requires a new signed authorization at the current controller and
+target generations. `preview-recovery`, `request-recovery`, and
+`execute-recovery` use `iicp.management-local-recovery.v1`; an earlier apply
+authorization cannot be reused. Exact reversal is available only when the
+selected adapter retained bounded prior-state material and an independent
+readback verifies the previous digest.
+
+The contract also names compensation and safing without pretending they are
+generic rollback. An adapter that has no explicit implementation returns a
+typed failure and a safe next action. Receipts distinguish `reversed`,
+`compensated`, `safed`, `partially_recovered`, `deferred`, and `failed`.
+Externally visible effects remain part of history even after compensation.
