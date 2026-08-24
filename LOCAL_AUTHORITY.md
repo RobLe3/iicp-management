@@ -17,6 +17,10 @@ The public-key file contains exactly 32 raw Ed25519 verification-key bytes. The
 controller does not load a signing key, provider credential or task content.
 The socket is created with owner-only permissions on Unix systems. Other local
 IPC transports must provide the same current-user boundary before being enabled.
+On Windows, use a named-pipe path such as
+`\\.\pipe\iicp-management-controller`. The controller creates a protected DACL
+that grants access only to the current Windows user and LocalSystem. It does not
+fall back to TCP or to the default named-pipe DACL.
 
 `ed25519-jcs-v1` is the initial signature profile, not a permanent management
 semantic. Requests expire within five minutes. Nonces are single use, and the
