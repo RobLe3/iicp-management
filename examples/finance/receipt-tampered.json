@@ -1,0 +1,18 @@
+{
+  "schema_version": "1",
+  "receipt_id": "receipt:finance:1",
+  "audience": "domain:finance",
+  "bundle_digest": "sha256:34610d016129da344fcca0d81ea8cf2860cd0d27063ba1b3d644a1d7f559f4e6",
+  "plan_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "accepted_generation": 1,
+  "effective_state": "converged",
+  "observations": [
+    {
+      "schema_version": "1",
+      "resource_id": "binding:finance",
+      "observed_generation": 1,
+      "observed_digest": "sha256:5b2de275c7b0fcabf9519ac56239b657bdf66e8eafddccf75a586007b731840e",
+      "state": "converged"
+    }
+  ]
+}

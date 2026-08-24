@@ -1,0 +1,1 @@
+{"schema_version":"1","bundle_id":"bundle:finance:1","issuer":"controller:finance","audience":"domain:finance","expected_generation":0,"resources":[{"resource_id":"binding:finance","kind":"iicp.management/application-binding-v1","desired":{"policy_binding":"binding:finance","policy_generation":1},"secret_refs":{}}],"extensions":[]}

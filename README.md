@@ -74,6 +74,27 @@ The next foundation layer provides a headless domain-local controller and
 capability-scoped adapters. See [LOCAL_AUTHORITY.md](LOCAL_AUTHORITY.md) for its
 authority, IPC, persistence and deployment boundaries.
 
+## Read-only operator CLI
+
+The `iicp-management` binary projects the typed contracts into a compact
+operator surface. It validates and plans desired state, shows policy inventory
+and effective policy, simulates policy changes, explains decisions, verifies
+receipts and inspects a local controller database without opening it for
+writing. Human-readable output is the default; place `--json` before the
+command for deterministic automation output. Exported controller snapshots are
+local evidence projections and explicitly carry no mutation authority.
+
+```bash
+cargo run --locked --bin iicp-management -- validate desired-state.json
+cargo run --locked --bin iicp-management -- --json plan desired-state.json accepted-state.json
+cargo run --locked --bin iicp-management -- show effective-policy workspace.json facts.json binding:example
+cargo run --locked --bin iicp-management -- controller status controller.db
+```
+
+See [`examples/finance`](examples/finance/README.md) for a complete disposable
+workflow. These commands do not authorize or apply changes. Command text and
+formatted output are projections; JSON management artifacts remain canonical.
+
 ## Authority boundary
 
 The contracts do not grant management authority. A future domain-local

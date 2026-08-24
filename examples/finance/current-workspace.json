@@ -1,0 +1,7 @@
+{
+  "revisions": [
+    {"schema_version":"1","policy_id":"policy:corporate-baseline","revision_id":"r1","authority":"domain:finance","scope":"application:finance","disposition":"stored","policy":{"eq":["member",true]},"extensions":[]}
+  ],
+  "policy_sets": [],
+  "binding": {"schema_version":"1","binding_id":"binding:finance","application_id":"application:finance","authority":"domain:finance","policies":[{"policy_id":"policy:corporate-baseline","revision_id":"r1","authority_rank":100,"mandatory":true,"order":1}],"policy_sets":[],"extensions":[]}
+}
