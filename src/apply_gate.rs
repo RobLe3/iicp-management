@@ -98,7 +98,6 @@ pub fn validate_apply_gate(value: &LocalApplyGateV1, now: u64) -> Result<(), App
         || value.operation.plan_digest != value.request.plan_digest
         || value.operation.desired_digest
             != digest(&value.operation.desired).map_err(|_| ApplyGateError::InvalidBinding)?
-        || value.operation.expected_generation != value.request.expected_generation
         || value.plan.target_generation != value.request.expected_generation
         || value.operation.expires_at > value.request.expires_at
         || value.authorization.expires_at > value.request.expires_at
@@ -115,6 +114,7 @@ pub fn validate_apply_gate(value: &LocalApplyGateV1, now: u64) -> Result<(), App
         .ok_or(ApplyGateError::InvalidBinding)?;
     if planned.resource_id != value.operation.target_id
         || planned.after_digest != value.operation.desired_digest
+        || planned.target_generation != value.operation.expected_generation
         || value.authorization.issuer_id != value.request.issuer_id
         || value.authorization.audience != value.request.audience
         || value.authorization.administrative_domain != value.request.administrative_domain

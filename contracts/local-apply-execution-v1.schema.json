@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/contracts/local-apply-execution-v1.schema.json",
+  "title": "IICP Local Apply Execution v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "gate"],
+  "properties": {
+    "schema_version": { "const": "iicp.management-local-execution.v1" },
+    "gate": { "$ref": "local-apply-gate-v1.schema.json" }
+  }
+}

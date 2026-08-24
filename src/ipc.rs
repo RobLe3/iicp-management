@@ -1,6 +1,7 @@
 use crate::apply_gate::LocalApplyGateV1;
 use crate::controller::ApplyAuthorizationReceiptV1;
 use crate::controller::{LocalPlanSubmissionV1, PlanSubmissionReceiptV1};
+use crate::execution::{ApplyLifecycleReceiptV1, LocalApplyExecutionV1};
 use std::{
     io::{BufRead, BufReader, Read, Write},
     path::Path,
@@ -42,6 +43,25 @@ pub fn request_apply(
     exchange(&mut stream, gate)
 }
 
+#[cfg(any(unix, windows))]
+pub fn execute_apply(
+    endpoint: &Path,
+    execution: &LocalApplyExecutionV1,
+) -> Result<ApplyLifecycleReceiptV1, String> {
+    #[cfg(unix)]
+    let mut stream = {
+        use std::os::unix::net::UnixStream;
+        UnixStream::connect(endpoint).map_err(|_| "IPC_CONNECT_FAILED".to_string())?
+    };
+    #[cfg(windows)]
+    let mut stream = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(endpoint)
+        .map_err(|_| "IPC_CONNECT_FAILED".to_string())?;
+    exchange(&mut stream, execution)
+}
+
 #[cfg(windows)]
 pub fn submit_plan(
     endpoint: &Path,
@@ -78,6 +98,14 @@ pub fn request_apply(
         .open(endpoint)
         .map_err(|_| "IPC_CONNECT_FAILED".to_string())?;
     exchange(&mut stream, gate)
+}
+
+#[cfg(not(any(unix, windows)))]
+pub fn execute_apply(
+    _: &Path,
+    _: &LocalApplyExecutionV1,
+) -> Result<ApplyLifecycleReceiptV1, String> {
+    Err("IPC_UNSUPPORTED_PLATFORM".into())
 }
 
 #[cfg(not(any(unix, windows)))]

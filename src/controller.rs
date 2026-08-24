@@ -337,6 +337,12 @@ pub struct Controller {
     verifying_key: VerifyingKey,
 }
 
+#[derive(Debug, Clone)]
+struct ApplyAuthorizationBinding {
+    operation_digest: String,
+    authority_context_digest: String,
+}
+
 impl Controller {
     pub fn open(
         path: &Path,
@@ -350,7 +356,7 @@ impl Controller {
             std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
                 .map_err(|_| ControllerError::Storage)?;
         }
-        connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY CHECK(id=1), generation INTEGER NOT NULL); INSERT OR IGNORE INTO state VALUES(1,0); CREATE TABLE IF NOT EXISTS nonces(nonce TEXT PRIMARY KEY, request_id TEXT NOT NULL, consumed_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS decisions(request_id TEXT PRIMARY KEY, decision TEXT NOT NULL, reason TEXT NOT NULL, generation INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS decision_events(id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT NOT NULL, generation INTEGER NOT NULL, recorded_at INTEGER NOT NULL);").map_err(|_|ControllerError::Storage)?;
+        connection.execute_batch("PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; CREATE TABLE IF NOT EXISTS state(id INTEGER PRIMARY KEY CHECK(id=1), generation INTEGER NOT NULL); INSERT OR IGNORE INTO state VALUES(1,0); CREATE TABLE IF NOT EXISTS nonces(nonce TEXT PRIMARY KEY, request_id TEXT NOT NULL, consumed_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS decisions(request_id TEXT PRIMARY KEY, decision TEXT NOT NULL, reason TEXT NOT NULL, generation INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS decision_events(id INTEGER PRIMARY KEY AUTOINCREMENT, request_id TEXT NOT NULL, decision TEXT NOT NULL, reason TEXT NOT NULL, generation INTEGER NOT NULL, recorded_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS apply_authorizations(request_id TEXT PRIMARY KEY, operation_digest TEXT NOT NULL, authority_context_digest TEXT NOT NULL, accepted_generation INTEGER NOT NULL);").map_err(|_|ControllerError::Storage)?;
         Ok(Self {
             connection,
             policy,
@@ -477,7 +483,7 @@ impl Controller {
         request: &ManagementRequest,
         now: u64,
     ) -> Result<ControllerReceipt, ControllerError> {
-        let result = self.evaluate_authorized(request, now);
+        let result = self.evaluate_authorized(request, now, None);
         if let Err(error) = &result {
             self.record_rejection(&request.request_id, &error.to_string(), now)?;
         }
@@ -495,7 +501,6 @@ impl Controller {
             || request.resource_ids[0] != operation.target_id
             || request.payload_digest != operation.desired_digest
             || request.plan_digest != operation.plan_digest
-            || request.expected_generation != operation.expected_generation
             || operation.expires_at > request.expires_at
         {
             return Err(ControllerError::AdapterBinding);
@@ -528,8 +533,15 @@ impl Controller {
         let operation_digest = digest(&gate.operation).map_err(ControllerError::Core)?;
         let authority_context_digest =
             digest(&gate.authorization).map_err(ControllerError::Core)?;
-        let (receipt, operation) =
-            self.authorize_adapter_operation(&gate.request, gate.operation.clone(), now)?;
+        let receipt = self.evaluate_authorized(
+            &gate.request,
+            now,
+            Some(ApplyAuthorizationBinding {
+                operation_digest: operation_digest.clone(),
+                authority_context_digest: authority_context_digest.clone(),
+            }),
+        )?;
+        let operation = AuthorizedAdapterOperation::from_controller(gate.operation.clone());
         Ok((
             ApplyAuthorizationReceiptV1::from_controller(
                 receipt,
@@ -537,6 +549,48 @@ impl Controller {
                 authority_context_digest,
             ),
             operation,
+        ))
+    }
+    pub fn resume_authorized_apply(
+        &self,
+        gate: &LocalApplyGateV1,
+        now: u64,
+    ) -> Result<(ApplyAuthorizationReceiptV1, AuthorizedAdapterOperation), ControllerError> {
+        validate_apply_gate(gate, now).map_err(|_| ControllerError::ApplyGate)?;
+        self.verify_request_signature(&gate.request)?;
+        let signature = Signature::from_slice(
+            &STANDARD
+                .decode(&gate.authorization.signature)
+                .map_err(|_| ControllerError::Signature)?,
+        )
+        .map_err(|_| ControllerError::Signature)?;
+        self.verifying_key
+            .verify(
+                &authorization_signing_bytes(&gate.authorization)
+                    .map_err(|_| ControllerError::ApplyGate)?,
+                &signature,
+            )
+            .map_err(|_| ControllerError::Signature)?;
+        let expected_operation = digest(&gate.operation).map_err(ControllerError::Core)?;
+        let expected_context = digest(&gate.authorization).map_err(ControllerError::Core)?;
+        let stored = self.connection.query_row(
+            "SELECT operation_digest,authority_context_digest,accepted_generation FROM apply_authorizations WHERE request_id=?1",
+            [&gate.request.request_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, u64>(2)?)),
+        ).optional().map_err(|_| ControllerError::Storage)?
+            .ok_or(ControllerError::ApplyGate)?;
+        if stored.0 != expected_operation || stored.1 != expected_context {
+            return Err(ControllerError::ApplyGate);
+        }
+        let receipt = ControllerReceipt {
+            request_id: gate.request.request_id.clone(),
+            decision: DecisionState::Accepted,
+            reason: "AUTHORIZED".into(),
+            generation: stored.2,
+        };
+        Ok((
+            ApplyAuthorizationReceiptV1::from_controller(receipt, stored.0, stored.1),
+            AuthorizedAdapterOperation::from_controller(gate.operation.clone()),
         ))
     }
     pub fn accept_plan_submission(
@@ -548,10 +602,22 @@ impl Controller {
         self.evaluate(&submission.request, now)
             .map(PlanSubmissionReceiptV1::from_controller)
     }
+    fn verify_request_signature(&self, request: &ManagementRequest) -> Result<(), ControllerError> {
+        let signature = Signature::from_slice(
+            &STANDARD
+                .decode(&request.signature)
+                .map_err(|_| ControllerError::Signature)?,
+        )
+        .map_err(|_| ControllerError::Signature)?;
+        self.verifying_key
+            .verify(&Self::signing_bytes(request)?, &signature)
+            .map_err(|_| ControllerError::Signature)
+    }
     fn evaluate_authorized(
         &mut self,
         request: &ManagementRequest,
         now: u64,
+        apply_binding: Option<ApplyAuthorizationBinding>,
     ) -> Result<ControllerReceipt, ControllerError> {
         if request.schema_version != "1" || request.signature_profile != SIGNATURE_PROFILE {
             return Err(ControllerError::Invalid("profile"));
@@ -594,15 +660,7 @@ impl Controller {
         {
             return Err(ControllerError::Policy);
         }
-        let signature = Signature::from_slice(
-            &STANDARD
-                .decode(&request.signature)
-                .map_err(|_| ControllerError::Signature)?,
-        )
-        .map_err(|_| ControllerError::Signature)?;
-        self.verifying_key
-            .verify(&Self::signing_bytes(request)?, &signature)
-            .map_err(|_| ControllerError::Signature)?;
+        self.verify_request_signature(request)?;
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -643,6 +701,12 @@ impl Controller {
             params![request.request_id, next, now],
         )
         .map_err(|_| ControllerError::Storage)?;
+        if let Some(binding) = apply_binding {
+            tx.execute(
+                "INSERT INTO apply_authorizations(request_id,operation_digest,authority_context_digest,accepted_generation) VALUES(?1,?2,?3,?4)",
+                params![request.request_id, binding.operation_digest, binding.authority_context_digest, next],
+            ).map_err(|_| ControllerError::Storage)?;
+        }
         tx.commit().map_err(|_| ControllerError::Storage)?;
         self.prune_decision_events()?;
         Ok(ControllerReceipt {
