@@ -4,7 +4,7 @@ use crate::{
 };
 use base64::{engine::general_purpose::STANDARD, Engine};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
-use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeSet,
@@ -60,6 +60,63 @@ pub struct DecisionRecord {
     pub reason: String,
     pub generation: u64,
     pub recorded_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ControllerSnapshot {
+    pub schema_version: String,
+    pub evidence_class: String,
+    pub authorizes_mutation: bool,
+    pub generation: u64,
+    pub recent_decisions: Vec<DecisionRecord>,
+    pub adapter_capabilities: Vec<String>,
+    pub target_state: String,
+}
+
+pub fn inspect_controller_database(
+    path: &Path,
+    limit: u64,
+) -> Result<ControllerSnapshot, ControllerError> {
+    let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|_| ControllerError::Storage)?;
+    let generation = connection
+        .query_row("SELECT generation FROM state WHERE id=1", [], |row| {
+            row.get(0)
+        })
+        .map_err(|_| ControllerError::Storage)?;
+    let mut statement = connection
+        .prepare("SELECT request_id,decision,reason,generation,recorded_at FROM decision_events ORDER BY id DESC LIMIT ?1")
+        .map_err(|_| ControllerError::Storage)?;
+    let rows = statement
+        .query_map([limit.min(100)], |row| {
+            let decision: String = row.get(1)?;
+            Ok(DecisionRecord {
+                request_id: row.get(0)?,
+                decision: match decision.as_str() {
+                    "accepted" => DecisionState::Accepted,
+                    "rejected" => DecisionState::Rejected,
+                    "deferred" => DecisionState::Deferred,
+                    "partial" => DecisionState::Partial,
+                    _ => DecisionState::Failed,
+                },
+                reason: row.get(2)?,
+                generation: row.get(3)?,
+                recorded_at: row.get(4)?,
+            })
+        })
+        .map_err(|_| ControllerError::Storage)?;
+    let recent_decisions = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| ControllerError::Storage)?;
+    Ok(ControllerSnapshot {
+        schema_version: "1".into(),
+        evidence_class: "local_controller_snapshot".into(),
+        authorizes_mutation: false,
+        generation,
+        recent_decisions,
+        adapter_capabilities: Vec::new(),
+        target_state: "not_reported_by_controller_store".into(),
+    })
 }
 
 #[derive(Debug, Clone)]

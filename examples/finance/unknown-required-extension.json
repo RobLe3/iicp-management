@@ -1,0 +1,1 @@
+{"schema_version":"1","bundle_id":"bundle:finance:unknown","issuer":"controller:finance","audience":"domain:finance","expected_generation":0,"resources":[],"extensions":[{"id":"urn:iicp:management:extension:unknown:v1","class":"REQUIRED_SECURITY_CRITICAL"}]}
