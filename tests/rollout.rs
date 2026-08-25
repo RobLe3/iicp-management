@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use ed25519_dalek::{Signer, SigningKey};
 use iicp_management_core::{
-    adapters::AdapterOperation,
+    adapters::{AdapterInspectionEntryV1, AdapterInspectionV1, AdapterOperation, AdapterReceipt},
     apply_gate::{
         authorization_signing_bytes, ApplyAuthorizationEvidenceV1, LocalApplyGateV1,
         APPLY_GATE_SCHEMA,
@@ -12,16 +12,65 @@ use iicp_management_core::{
     progressive_authority::{
         OperatingMode, PolicyBoundaryAssessment, ProgressiveAuthorityEvidenceV1,
     },
+    reconciliation::{DriftClass, DriftState},
     rollout::{
         partial_acceptance_signing_bytes, validate_manifest, FailurePolicy, OperationRunV1,
         PartialAcceptanceV1, RolloutStore, RolloutTargetV1, RunState, TargetRunState,
         PARTIAL_ACCEPTANCE_SCHEMA, ROLLOUT_SCHEMA,
     },
-    Operation, Plan, PolicyDecision, PLANNER_VERSION,
+    ConvergenceState, Operation, Plan, PolicyDecision, PLANNER_VERSION,
 };
 
 fn sha(c: char) -> String {
     format!("sha256:{}", c.to_string().repeat(64))
+}
+
+fn inspection(
+    now: u64,
+    digest_value: Option<String>,
+    generation: Option<u64>,
+) -> AdapterInspectionV1 {
+    AdapterInspectionV1 {
+        schema_version: "1".into(),
+        evidence_class: "adapter_host_observation".into(),
+        evidence_source: "domain_local_adapter_host".into(),
+        authorizes_mutation: false,
+        observed_at: now,
+        expires_at: now + 60,
+        entries: vec![AdapterInspectionEntryV1 {
+            target_id: "target:0".into(),
+            registered_capability: "synthetic-v1".into(),
+            advertised_capabilities: vec!["synthetic-v1".into()],
+            descriptor_digest: sha('e'),
+            observation_digest: digest_value,
+            observed_generation: generation,
+            convergence_state: None,
+            reason_code: "OBSERVED".into(),
+        }],
+        extensions: vec![],
+    }
+}
+
+fn converged_single_store(path: &std::path::Path, now: u64) -> RolloutStore {
+    let mut store = RolloutStore::open(path).unwrap();
+    store.create(&manifest(1, now), now).unwrap();
+    store.mark_running("run:test", "target:0", now).unwrap();
+    let mut lifecycle = receipt("operation:0", ExecutionState::Converged);
+    lifecycle.verification_receipt = Some(AdapterReceipt {
+        operation_id: "operation:0".into(),
+        state: ConvergenceState::Converged,
+        generation: 1,
+        result_digest: manifest(1, now).targets[0]
+            .gate
+            .operation
+            .desired_digest
+            .clone(),
+        reason: "VERIFIED".into(),
+    });
+    store
+        .record_receipt("run:test", "target:0", &lifecycle, now + 1)
+        .unwrap();
+    store
 }
 fn sign_request(key: &SigningKey, request: &mut ManagementRequest) {
     let mut value = serde_json::to_value(&*request).unwrap();
@@ -133,6 +182,33 @@ fn gate(key: &SigningKey, id: usize, now: u64) -> LocalApplyGateV1 {
         progressive_authority,
         authorization,
     }
+}
+
+fn reconciliation_gate(key: &SigningKey, now: u64, observed_generation: u64) -> LocalApplyGateV1 {
+    let mut value = gate(key, 0, now);
+    let operation_id = "operation:reconcile:0".to_string();
+    value.operation.operation_id = operation_id.clone();
+    value.operation.expected_generation = observed_generation;
+    value.operation.related_operation_id = Some("operation:0".into());
+    value.plan.operations[0].operation_id = operation_id.clone();
+    value.plan.operations[0].target_generation = observed_generation;
+    value.plan.operations[0].expected_generation = observed_generation;
+    let plan_digest = digest(&value.plan).unwrap();
+    value.operation.plan_digest = plan_digest.clone();
+    value.request.request_id = operation_id;
+    value.request.plan_digest = plan_digest.clone();
+    value.request.nonce = "nonce:reconcile:0".into();
+    value.authorization.authorization_id = "authorization:reconcile:0".into();
+    value.authorization.plan_digest = plan_digest;
+    value.authorization.operation_digest = digest(&value.operation).unwrap();
+    value.authorization.signature.clear();
+    sign_authorization(key, &mut value.authorization);
+    value.progressive_authority.plan_digest = Some(value.request.plan_digest.clone());
+    value.progressive_authority.authorization_evidence_digest =
+        Some(digest(&value.authorization).unwrap());
+    value.request.signature.clear();
+    sign_request(key, &mut value.request);
+    value
 }
 fn manifest(count: usize, now: u64) -> OperationRunV1 {
     let key = SigningKey::from_bytes(&[41; 32]);
@@ -383,4 +459,139 @@ fn published_schema_accepts_manifest_status_and_acceptance() {
         signature: "signature".into(),
     };
     assert!(validator.is_valid(&serde_json::to_value(acceptance).unwrap()));
+}
+
+#[test]
+fn drift_assessment_is_durable_and_missing_evidence_is_unknown() {
+    let now = 1_700_000_000;
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("r.db");
+    let mut store = converged_single_store(&path, now);
+    let output = store
+        .assess_drift("run:test", &inspection(now + 2, None, None), now + 2)
+        .unwrap();
+    assert_eq!(output.assessments[0].state, DriftState::Unknown);
+    assert!(!output.authorizes_mutation);
+    drop(store);
+    let reopened = RolloutStore::open(&path)
+        .unwrap()
+        .drift_status("run:test")
+        .unwrap();
+    assert_eq!(reopened.assessments, output.assessments);
+}
+
+#[test]
+fn exact_and_changed_observations_are_distinguished() {
+    let now = 1_700_000_000;
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = converged_single_store(&dir.path().join("r.db"), now);
+    let expected = manifest(1, now).targets[0]
+        .gate
+        .operation
+        .desired_digest
+        .clone();
+    let current = store
+        .assess_drift(
+            "run:test",
+            &inspection(now + 2, Some(expected), Some(1)),
+            now + 2,
+        )
+        .unwrap();
+    assert_eq!(current.assessments[0].state, DriftState::InSync);
+    let changed = store
+        .assess_drift(
+            "run:test",
+            &inspection(now + 3, Some(sha('f')), Some(2)),
+            now + 3,
+        )
+        .unwrap();
+    assert_eq!(changed.assessments[0].state, DriftState::Drifted);
+}
+
+#[test]
+fn only_bounded_classes_create_non_authorizing_proposals() {
+    let now = 1_700_000_000;
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = converged_single_store(&dir.path().join("r.db"), now);
+    store
+        .assess_drift(
+            "run:test",
+            &inspection(now + 2, Some(sha('f')), Some(2)),
+            now + 2,
+        )
+        .unwrap();
+    assert_eq!(
+        store
+            .create_reconciliation_proposal(
+                "run:test",
+                "target:0",
+                DriftClass::TrustIdentity,
+                now + 3
+            )
+            .unwrap_err(),
+        "RECONCILIATION_CLASS_REVIEW_REQUIRED"
+    );
+    let proposal = store
+        .create_reconciliation_proposal(
+            "run:test",
+            "target:0",
+            DriftClass::CapabilityRuntime,
+            now + 3,
+        )
+        .unwrap();
+    assert!(!proposal.authorizes_mutation);
+    assert!(proposal.requires_fresh_apply_gate);
+    assert_eq!(proposal.expected_observed_generation, 2);
+    assert_eq!(
+        store
+            .create_reconciliation_proposal(
+                "run:test",
+                "target:0",
+                DriftClass::SafeMetadata,
+                now + 100,
+            )
+            .unwrap_err(),
+        "RECONCILIATION_INVALID"
+    );
+    let original_gate = manifest(1, now).targets.into_iter().next().unwrap().gate;
+    assert_eq!(
+        store
+            .validate_reconciliation_gate(&proposal.proposal_id, &original_gate, now + 3)
+            .unwrap_err(),
+        "RECONCILIATION_GATE_BINDING_INVALID"
+    );
+    let key = SigningKey::from_bytes(&[41; 32]);
+    let fresh = reconciliation_gate(&key, now, 2);
+    assert_eq!(
+        store
+            .validate_reconciliation_gate(&proposal.proposal_id, &fresh, now + 3)
+            .unwrap()
+            .proposal_id,
+        proposal.proposal_id
+    );
+}
+
+#[test]
+fn reconciliation_schema_accepts_public_projections() {
+    let now = 1_700_000_000;
+    let schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../contracts/management-reconciliation-v1.schema.json"
+    ))
+    .unwrap();
+    let validator = jsonschema::validator_for(&schema).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = converged_single_store(&dir.path().join("r.db"), now);
+    let status = store
+        .assess_drift(
+            "run:test",
+            &inspection(now + 2, Some(sha('f')), Some(2)),
+            now + 2,
+        )
+        .unwrap();
+    assert!(validator.is_valid(&serde_json::to_value(&status.assessments[0]).unwrap()));
+    assert!(validator.is_valid(&serde_json::to_value(&status).unwrap()));
+    let proposal = store
+        .create_reconciliation_proposal("run:test", "target:0", DriftClass::SafeMetadata, now + 3)
+        .unwrap();
+    assert!(validator.is_valid(&serde_json::to_value(proposal).unwrap()));
 }
