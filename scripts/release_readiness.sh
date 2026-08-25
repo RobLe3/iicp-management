@@ -29,7 +29,7 @@ command -v cargo-audit >/dev/null || fail "cargo-audit 0.22.2 is required"
 [[ "$(cargo audit --version)" == *"0.22.2"* ]] || fail "cargo-audit 0.22.2 is required"
 
 python3 scripts/check_dependency_policy.py
-python3 -m unittest scripts/test_dependency_policy.py scripts/test_release_manifest.py
+python3 -m unittest scripts/test_dependency_policy.py scripts/test_release_manifest.py scripts/test_release_readiness.py
 cargo metadata --locked --format-version 1 >/dev/null
 advisory="$cleanup_dir/advisory-db"
 git clone --quiet --depth 1 https://github.com/RustSec/advisory-db.git "$advisory"
