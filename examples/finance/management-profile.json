@@ -1,0 +1,18 @@
+{
+  "schema_version": "iicp.management-profile.v1",
+  "controller_id": "controller:finance-local",
+  "administrative_domains": ["domain:finance"],
+  "api_versions": ["management-local-ipc/v1"],
+  "schema_ids": ["iicp.management-apply-gate.v1", "iicp.management-plan-submission.v1"],
+  "canonicalization": ["RFC8785-JCS"],
+  "signature_algorithms": ["Ed25519"],
+  "operations": ["apply", "observe", "verify"],
+  "resource_kinds": ["runtime-config-v1"],
+  "policy_evaluators": ["iicp.management-policy.typed-v0"],
+  "limits": {"max_document_bytes": 1048576, "max_operations": 1000, "max_targets": 1000},
+  "evidence": ["adapter-receipt-v1", "controller-authorization-receipt-v1", "verification-receipt-v1"],
+  "conformance": ["management-portable-conformance-v1"],
+  "validity": {"issued_at": 0, "not_before": 0, "expires_at": 4102444800, "generation": 1},
+  "extensions": [],
+  "authorizes_mutation": false
+}

@@ -1,0 +1,26 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://iicp.network/schemas/management/management-profile-requirement-v1.schema.json",
+  "title":"IICP Management Profile Requirement v1",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["schema_version","controller_id","administrative_domain","api_versions","schema_ids","canonicalization","signature_algorithms","operations","resource_kinds","policy_evaluators","extensions"],
+  "properties":{
+    "schema_version":{"const":"iicp.management-profile-requirement.v1"},
+    "controller_id":{"anyOf":[{"$ref":"#/$defs/id"},{"type":"null"}]},
+    "administrative_domain":{"anyOf":[{"$ref":"#/$defs/id"},{"type":"null"}]},
+    "api_versions":{"$ref":"#/$defs/ids"},
+    "schema_ids":{"$ref":"#/$defs/ids"},
+    "canonicalization":{"$ref":"#/$defs/ids"},
+    "signature_algorithms":{"$ref":"#/$defs/ids"},
+    "operations":{"$ref":"#/$defs/ids"},
+    "resource_kinds":{"$ref":"#/$defs/ids"},
+    "policy_evaluators":{"$ref":"#/$defs/ids"},
+    "extensions":{"type":"array","maxItems":128,"items":{"$ref":"#/$defs/extension"}}
+  },
+  "$defs":{
+    "id":{"type":"string","minLength":1,"maxLength":256,"pattern":"^\\S+$"},
+    "ids":{"type":"array","maxItems":1024,"uniqueItems":true,"items":{"$ref":"#/$defs/id"}},
+    "extension":{"type":"object","additionalProperties":false,"required":["id","class"],"properties":{"id":{"$ref":"#/$defs/id"},"class":{"enum":["OPTIONAL_IGNORABLE","OPTIONAL_NEGOTIABLE","REQUIRED_UNDERSTOOD","REQUIRED_SECURITY_CRITICAL"]}}}
+  }
+}

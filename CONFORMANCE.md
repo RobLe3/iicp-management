@@ -77,3 +77,18 @@ python3 tools/run_adapter_inspection_conformance.py \
 The artifact carries no raw target state and cannot authorize mutation. A
 successful observation without an adapter receipt is not convergence. The Rust
 and standard-library Python validators consume the same seven cases.
+
+## Direct-controller profile compatibility
+
+The management-profile pack covers exact compatibility, unsupported
+operations, unknown required security extensions, expired profiles, duplicate
+claims and administrative-domain mismatch:
+
+```bash
+cargo test --locked --test profile_conformance
+python3 tools/run_management_profile_conformance.py \
+  fixtures/management-profile-conformance-v1.json
+```
+
+The profile is a compatibility projection. A passing result does not establish
+controller identity, caller authorization or permission to mutate a target.

@@ -12,6 +12,7 @@ pub mod controller;
 pub mod execution;
 pub mod ipc;
 pub mod policy_lifecycle;
+pub mod profile;
 pub mod progressive_authority;
 pub mod reconciliation;
 pub mod recovery;

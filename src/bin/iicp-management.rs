@@ -13,12 +13,17 @@ use iicp_management_core::controller::{
 };
 use iicp_management_core::execution::{LocalApplyExecutionV1, EXECUTION_SCHEMA};
 use iicp_management_core::ipc::{
-    execute_apply, execute_recovery, request_apply, request_recovery, submit_plan,
+    execute_apply, execute_recovery, query_profile, request_apply, request_recovery, submit_plan,
 };
 use iicp_management_core::policy_lifecycle::{
     repository_from_workspace, simulate_policy_change, ApplicationBindingV1,
     InMemoryPolicyRepository, PolicyDisposition, PolicyReferenceV1, PolicyRevisionV1,
     PolicyWorkspaceV1,
+};
+use iicp_management_core::profile::{
+    controller_profile, intersect_profile, profile_digest, validate_profile,
+    ManagementProfileRequirementV1, ManagementProfileV1, ProfileCompatibility,
+    MANAGEMENT_PROFILE_REQUIREMENT_SCHEMA, MANAGEMENT_PROFILE_RESPONSE_SCHEMA,
 };
 use iicp_management_core::progressive_authority::OperatingMode;
 use iicp_management_core::reconciliation::DriftClass;
@@ -74,7 +79,7 @@ fn emit<T: Serialize>(value: &T, json_output: bool, summary: impl FnOnce() -> St
 }
 
 fn usage() -> &'static str {
-    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|template|impact|bootstrap|doctor|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|rollout|controller|evidence> ...\n\
+    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|template|impact|bootstrap|doctor|profile|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|rollout|controller|evidence> ...\n\
 validate <bundle.json>\nplan <bundle.json> <accepted.json>\ndiff <plan.json>\nsimulate <current-workspace.json> <proposed-workspace.json> <facts.json> <binding-id>\n\
 show <stored-policies|active-policies|effective-policy> <workspace.json> [facts.json] [binding-id]\n\
 explain decision <workspace.json> <facts.json> <binding-id> <intent> <decision-id>\n\
@@ -94,7 +99,10 @@ bootstrap <assess|export> <assessment.json>\n\
 bootstrap proposal <assessment.json> <issuer> <audience> <generation>\n\
 bootstrap import <desired-state.json>\n\
 bootstrap sandbox\n\
-doctor <assessment.json> [controller.db] [adapter-inspection.json]\n\
+doctor <assessment.json> [controller.db] [adapter-inspection.json] [profile.json] [requirement.json]\n\
+profile <show|verify> <profile.json>\n\
+profile intersect <profile.json> <requirement.json>\n\
+profile controller <socket-or-pipe>\n\
 controller status <controller.db> [adapter-inspection.json]\nevidence export <controller.db> [adapter-inspection.json]"
 }
 
@@ -440,6 +448,28 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                     authorizes_mutation: false,
                 };
                 validate_friction(&friction)?;
+                let management_profile = controller_profile(
+                    "controller:finance-sandbox",
+                    "domain:finance",
+                    BTreeSet::from(["apply".into(), "observe".into(), "verify".into()]),
+                    BTreeSet::from(["runtime-config-v1".into()]),
+                    now,
+                );
+                let profile_requirement = ManagementProfileRequirementV1 {
+                    schema_version: MANAGEMENT_PROFILE_REQUIREMENT_SCHEMA.into(),
+                    controller_id: Some("controller:finance-sandbox".into()),
+                    administrative_domain: Some("domain:finance".into()),
+                    api_versions: vec!["management-local-ipc/v1".into()],
+                    schema_ids: vec!["iicp.management-apply-gate.v1".into()],
+                    canonicalization: vec!["RFC8785-JCS".into()],
+                    signature_algorithms: vec!["Ed25519".into()],
+                    operations: vec!["apply".into(), "verify".into()],
+                    resource_kinds: vec!["runtime-config-v1".into()],
+                    policy_evaluators: vec!["iicp.management-policy.typed-v0".into()],
+                    extensions: Vec::new(),
+                };
+                let profile_intersection =
+                    intersect_profile(&management_profile, &profile_requirement, now)?;
                 let output = json!({
                     "assessment":assessment,
                     "template":template,
@@ -448,6 +478,8 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                     "simulation":simulation,
                     "proposal":proposal,
                     "plan":management_plan,
+                    "management_profile":management_profile,
+                    "profile_intersection":profile_intersection,
                     "friction_evidence":friction,
                     "activated":false
                 });
@@ -456,7 +488,7 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
             _ => return Err("USAGE_INVALID".into()),
         },
         Some("doctor") => {
-            if args.len() < 2 || args.len() > 4 {
+            if args.len() < 2 || args.len() > 6 {
                 return Err("USAGE_INVALID".into());
             }
             let assessment: BootstrapAssessmentV1 = read(&args[1])?;
@@ -474,12 +506,52 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                     .is_ok()
                 })
             });
-            let output = doctor(
+            let mut output = doctor(
                 &assessment,
                 Controller::now(),
                 controller_status,
                 adapter_status,
             );
+            if let Some(path) = args.get(4) {
+                let profile: ManagementProfileV1 = read(path)?;
+                let state = if let Some(requirement_path) = args.get(5) {
+                    let requirement: ManagementProfileRequirementV1 = read(requirement_path)?;
+                    match intersect_profile(&profile, &requirement, Controller::now()) {
+                        Ok(result) if result.compatibility == ProfileCompatibility::Compatible => {
+                            CheckState::Pass
+                        }
+                        Ok(_) => CheckState::Fail,
+                        Err(_) => CheckState::Fail,
+                    }
+                } else if validate_profile(&profile, Controller::now()).is_ok() {
+                    CheckState::Pass
+                } else {
+                    CheckState::Fail
+                };
+                output
+                    .checks
+                    .push(iicp_management_core::bootstrap::DoctorCheckV1 {
+                        check_id: "management_profile".into(),
+                        reason_code: if state == CheckState::Pass {
+                            "MANAGEMENT_PROFILE_COMPATIBLE"
+                        } else {
+                            "MANAGEMENT_PROFILE_INCOMPATIBLE"
+                        }
+                        .into(),
+                        state,
+                    });
+                output.overall = if output.checks.iter().any(|c| c.state == CheckState::Fail) {
+                    CheckState::Fail
+                } else if output
+                    .checks
+                    .iter()
+                    .any(|c| matches!(c.state, CheckState::Warn | CheckState::NotAvailable))
+                {
+                    CheckState::Warn
+                } else {
+                    CheckState::Pass
+                };
+            }
             let overall = output.overall.clone();
             emit(&output, json_output, || {
                 format!("Management doctor: {overall:?}")
@@ -488,6 +560,63 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                 return Err("DOCTOR_FAILED".into());
             }
         }
+        Some("profile") => match args.get(1).map(String::as_str) {
+            Some("show") => {
+                let a = require(&args[2..], 1)?;
+                let output: ManagementProfileV1 = read(&a[0])?;
+                validate_profile(&output, Controller::now())?;
+                let id = output.controller_id.clone();
+                let digest = profile_digest(&output, Controller::now())?;
+                emit(&output, json_output, || {
+                    format!("Controller: {id}\nProfile digest: {digest}")
+                });
+            }
+            Some("verify") => {
+                let a = require(&args[2..], 1)?;
+                let profile: ManagementProfileV1 = read(&a[0])?;
+                let profile_digest = profile_digest(&profile, Controller::now())?;
+                let output = json!({
+                    "valid": true,
+                    "profile_digest": profile_digest,
+                    "authorizes_mutation": false
+                });
+                emit(&output, json_output, || {
+                    format!("Valid management profile: {profile_digest}")
+                });
+            }
+            Some("intersect") => {
+                let a = require(&args[2..], 2)?;
+                let profile: ManagementProfileV1 = read(&a[0])?;
+                let requirement: ManagementProfileRequirementV1 = read(&a[1])?;
+                let output = intersect_profile(&profile, &requirement, Controller::now())?;
+                let compatibility = output.compatibility.clone();
+                let reasons = output.reason_codes.join(", ");
+                emit(&output, json_output, || {
+                    format!("Compatibility: {compatibility:?}\nReasons: {reasons}")
+                });
+                if compatibility == ProfileCompatibility::Incompatible {
+                    return Err("PROFILE_INCOMPATIBLE".into());
+                }
+            }
+            Some("controller") => {
+                let a = require(&args[2..], 1)?;
+                let output = query_profile(Path::new(&a[0]))?;
+                if output.schema_version != MANAGEMENT_PROFILE_RESPONSE_SCHEMA
+                    || output.authorizes_mutation
+                    || output.source != "owner_protected_local_controller"
+                {
+                    return Err("PROFILE_RESPONSE_INVALID".into());
+                }
+                let digest = profile_digest(&output.profile, Controller::now())?;
+                if digest != output.profile_digest {
+                    return Err("PROFILE_RESPONSE_DIGEST_MISMATCH".into());
+                }
+                emit(&output, json_output, || {
+                    format!("Local controller profile: {digest}")
+                });
+            }
+            _ => return Err("USAGE_INVALID".into()),
+        },
         Some("submit-plan") => {
             let a = require(&args[1..], 2)?;
             let submission: LocalPlanSubmissionV1 = read(&a[1])?;
@@ -931,6 +1060,8 @@ fn main() -> ExitCode {
                 3
             } else if error == "SUBMISSION_DEFERRED" {
                 5
+            } else if error.starts_with("PROFILE_") {
+                3
             } else {
                 4
             })

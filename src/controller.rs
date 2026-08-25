@@ -353,6 +353,19 @@ struct ApplyAuthorizationBinding {
 }
 
 impl Controller {
+    pub fn management_profile(
+        &self,
+        resource_kinds: BTreeSet<String>,
+        now: u64,
+    ) -> crate::profile::ManagementProfileV1 {
+        crate::profile::controller_profile(
+            &self.policy.audience,
+            &self.policy.domain,
+            self.policy.allowed_actions.clone(),
+            resource_kinds,
+            now,
+        )
+    }
     pub fn open(
         path: &Path,
         policy: ControllerPolicy,

@@ -2,6 +2,9 @@ use crate::apply_gate::LocalApplyGateV1;
 use crate::controller::ApplyAuthorizationReceiptV1;
 use crate::controller::{LocalPlanSubmissionV1, PlanSubmissionReceiptV1};
 use crate::execution::{ApplyLifecycleReceiptV1, LocalApplyExecutionV1};
+use crate::profile::{
+    ManagementProfileQueryV1, ManagementProfileResponseV1, MANAGEMENT_PROFILE_QUERY_SCHEMA,
+};
 use crate::recovery::{LocalRecoveryExecutionV1, LocalRecoveryGateV1, RecoveryLifecycleReceiptV1};
 use std::{
     io::{BufRead, BufReader, Read, Write},
@@ -80,6 +83,16 @@ pub fn execute_recovery(
 }
 
 #[cfg(any(unix, windows))]
+pub fn query_profile(endpoint: &Path) -> Result<ManagementProfileResponseV1, String> {
+    platform_exchange(
+        endpoint,
+        &ManagementProfileQueryV1 {
+            schema_version: MANAGEMENT_PROFILE_QUERY_SCHEMA.into(),
+        },
+    )
+}
+
+#[cfg(any(unix, windows))]
 fn platform_exchange<Q: serde::Serialize, R: serde::de::DeserializeOwned>(
     endpoint: &Path,
     value: &Q,
@@ -155,6 +168,11 @@ pub fn execute_recovery(
     _: &Path,
     _: &LocalRecoveryExecutionV1,
 ) -> Result<RecoveryLifecycleReceiptV1, String> {
+    Err("IPC_UNSUPPORTED_PLATFORM".into())
+}
+
+#[cfg(not(any(unix, windows)))]
+pub fn query_profile(_: &Path) -> Result<ManagementProfileResponseV1, String> {
     Err("IPC_UNSUPPORTED_PLATFORM".into())
 }
 

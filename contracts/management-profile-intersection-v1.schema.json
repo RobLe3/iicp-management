@@ -1,0 +1,20 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://iicp.network/schemas/management/management-profile-intersection-v1.schema.json",
+  "title":"IICP Management Profile Intersection v1",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","profile_digest","compatibility","selected_api_versions","selected_schema_ids","selected_operations","selected_resource_kinds","selected_policy_evaluators","reason_codes","authorizes_mutation"],
+  "properties":{
+    "schema_version":{"const":"iicp.management-profile-intersection.v1"},
+    "profile_digest":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+    "compatibility":{"enum":["compatible","incompatible"]},
+    "selected_api_versions":{"$ref":"#/$defs/ids"},
+    "selected_schema_ids":{"$ref":"#/$defs/ids"},
+    "selected_operations":{"$ref":"#/$defs/ids"},
+    "selected_resource_kinds":{"$ref":"#/$defs/ids"},
+    "selected_policy_evaluators":{"$ref":"#/$defs/ids"},
+    "reason_codes":{"type":"array","maxItems":1024,"uniqueItems":true,"items":{"type":"string","minLength":1,"maxLength":512}},
+    "authorizes_mutation":{"const":false}
+  },
+  "$defs":{"id":{"type":"string","minLength":1,"maxLength":256,"pattern":"^\\S+$"},"ids":{"type":"array","maxItems":1024,"uniqueItems":true,"items":{"$ref":"#/$defs/id"}}}
+}

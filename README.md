@@ -190,6 +190,24 @@ or become undeclared IICP protocol authority. Product workflows, analytics, IAM
 integrations, managed operations and product-specific interfaces remain outside
 this repository.
 
+## Direct-controller compatibility profile
+
+The controller exposes a deterministic, non-authorizing profile through its
+owner-protected local transport. Clients can validate a profile, calculate the
+required compatibility intersection or query the configured controller:
+
+```bash
+iicp-management profile verify profile.json
+iicp-management profile intersect profile.json requirement.json
+iicp-management profile controller /run/user/$(id -u)/iicp-management.sock
+```
+
+The profile advertises only configured and compiled behavior. It does not grant
+trust or permission to apply a change, and it does not add a Directory field or
+network administration endpoint. See
+[`docs/MANAGEMENT_PROFILE.md`](docs/MANAGEMENT_PROFILE.md) and
+[`ADR-007`](docs/ADR-007-management-profile-is-non-authorizing.md).
+
 ## Progressive adoption
 
 Observation, recommendation and execution are separate management claims.
