@@ -51,9 +51,22 @@ pub struct RuntimeObservationV1 {
 
 fn forbidden_key(key: &str) -> bool {
     let normalized = key.to_ascii_lowercase().replace(['_', '-', ' '], "");
-    matches!(normalized.as_str(), "secret" | "secretvalue" | "operatorsecret" | "password" |
-        "token" | "accesstoken" | "refreshtoken" | "bearertoken" | "apikey" | "privatekey" |
-        "prompt" | "response" | "taskpayload")
+    matches!(
+        normalized.as_str(),
+        "secret"
+            | "secretvalue"
+            | "operatorsecret"
+            | "password"
+            | "token"
+            | "accesstoken"
+            | "refreshtoken"
+            | "bearertoken"
+            | "apikey"
+            | "privatekey"
+            | "prompt"
+            | "response"
+            | "taskpayload"
+    )
 }
 
 fn reject_sensitive(value: &Value) -> Result<(), String> {
@@ -108,7 +121,10 @@ pub fn project_runtime_health(
         || snapshot.subsystems.len() > 128
         || snapshot.external_connectivity.len() > 128
         || snapshot.reason_codes.len() > 128
-        || snapshot.subsystems.keys().chain(snapshot.external_connectivity.keys())
+        || snapshot
+            .subsystems
+            .keys()
+            .chain(snapshot.external_connectivity.keys())
             .any(|key| key.is_empty() || key.len() > 128)
     {
         return Err("RUNTIME_HEALTH_BOUNDS_INVALID".into());
@@ -124,14 +140,22 @@ pub fn project_runtime_health(
     if observed > evaluated {
         return Err("RUNTIME_HEALTH_TIMESTAMP_FUTURE".into());
     }
-    let mut freshness_ms = snapshot.progress.runtime.stale_after_ms
+    let mut freshness_ms = snapshot
+        .progress
+        .runtime
+        .stale_after_ms
         .saturating_sub(snapshot.progress.runtime.age_ms);
     if snapshot.progress.supervisor.required {
         if snapshot.progress.supervisor.stale_after_ms == 0 {
             return Err("RUNTIME_HEALTH_BOUNDS_INVALID".into());
         }
-        freshness_ms = freshness_ms.min(snapshot.progress.supervisor.stale_after_ms
-            .saturating_sub(snapshot.progress.supervisor.age_ms));
+        freshness_ms = freshness_ms.min(
+            snapshot
+                .progress
+                .supervisor
+                .stale_after_ms
+                .saturating_sub(snapshot.progress.supervisor.age_ms),
+        );
     }
     let expires = observed
         .checked_add_signed(TimeDelta::milliseconds(

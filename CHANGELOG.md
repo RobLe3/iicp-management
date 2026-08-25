@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0 — 2026-08-25 developer preview
+
+- Add a content-minimized, freshness-bounded projection of local Rust node runtime-health v1 evidence.
+- Add read-only file/stdin CLI inspection, typed JSON output and shell completion.
+- Reject unsupported, future-dated, sensitive, malformed and oversized input without an inferred healthy fallback.
+- Keep runtime observation separate from wire semantics and lifecycle authority.
+
 ## 0.6.0 — 2026-08-25 developer preview
 
 - Add bounded candidate-evidence and resolution-inspection contracts.
@@ -32,8 +39,6 @@
 
 This project follows semantic versioning for published packages. Contracts and
 fixtures retain their own explicit schema and profile generations.
-
-## Unreleased
 
 ## 0.2.0 — 2026-08-25 developer preview
 
