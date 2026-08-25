@@ -14,7 +14,7 @@ axes. A package update does not silently change a released contract's meaning.
 - A downgrade is supported only when the older binary understands every
   persisted schema generation in use.
 
-The `0.1` line is a developer preview. Rust source APIs may evolve between
+The pre-1.0 lines are developer previews. Rust source APIs may evolve between
 minor releases, but serialized contract changes require a new explicit schema
 or profile generation plus positive and negative fixtures.
 

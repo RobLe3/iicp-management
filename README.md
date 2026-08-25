@@ -12,7 +12,7 @@ authority or production deployment.
 
 For a bounded five-minute evaluation, packaged-crate rules and the offline
 bundle procedure, see the
-[`0.1 developer-preview installation guide`](docs/DEVELOPER_PREVIEW_INSTALLATION.md).
+[`0.2 developer-preview installation guide`](docs/DEVELOPER_PREVIEW_INSTALLATION.md).
 
 ## State model
 
