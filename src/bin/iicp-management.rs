@@ -11,6 +11,9 @@ use iicp_management_core::controller::{
     attach_adapter_inspection, inspect_controller_database, validate_plan_submission, Controller,
     DecisionState, LocalPlanSubmissionV1,
 };
+use iicp_management_core::diagnostics::{
+    create_diagnostic_bundle, validate_diagnostic_bundle, DiagnosticBundleV1,
+};
 use iicp_management_core::execution::{LocalApplyExecutionV1, EXECUTION_SCHEMA};
 use iicp_management_core::ipc::{
     execute_apply, execute_recovery, query_profile, request_apply, request_recovery, submit_plan,
@@ -32,7 +35,8 @@ use iicp_management_core::recovery::{
     RECOVERY_EXECUTION_SCHEMA,
 };
 use iicp_management_core::rollout::{
-    validate_manifest, OperationRunV1, PartialAcceptanceV1, RolloutStore, RunState,
+    validate_manifest, ConvergenceStatusV1, OperationRunV1, PartialAcceptanceV1, RolloutStore,
+    RunState,
 };
 use iicp_management_core::templates::{
     builtin_templates, preview_impact, render_template, template_by_id, CompatibilityStatus,
@@ -62,6 +66,37 @@ fn read<T: DeserializeOwned>(path: &str) -> Result<T, String> {
     serde_json::from_slice(&bytes).map_err(|_| format!("INPUT_JSON_INVALID:{path}"))
 }
 
+fn write_private_json<T: Serialize>(path: &str, value: &T) -> Result<(), String> {
+    let bytes = serde_json::to_vec_pretty(value).map_err(|_| "OUTPUT_SERIALIZATION_FAILED")?;
+    let output = Path::new(path);
+    if output.exists() {
+        return Err("OUTPUT_EXISTS".into());
+    }
+    let temporary = output.with_extension(format!("tmp.{}", std::process::id()));
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let result = (|| {
+        use std::io::Write;
+        let mut file = options
+            .open(&temporary)
+            .map_err(|_| "OUTPUT_CREATE_FAILED".to_string())?;
+        file.write_all(&bytes)
+            .and_then(|_| file.write_all(b"\n"))
+            .and_then(|_| file.sync_all())
+            .map_err(|_| "OUTPUT_WRITE_FAILED".to_string())?;
+        fs::rename(&temporary, output).map_err(|_| "OUTPUT_RENAME_FAILED".to_string())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
 fn repository(path: &str) -> Result<InMemoryPolicyRepository, String> {
     let input: PolicyWorkspaceV1 = read(path)?;
     repository_from_workspace(input).map_err(|error| error.to_string())
@@ -79,7 +114,7 @@ fn emit<T: Serialize>(value: &T, json_output: bool, summary: impl FnOnce() -> St
 }
 
 fn usage() -> &'static str {
-    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|template|impact|bootstrap|doctor|profile|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|rollout|controller|evidence> ...\n\
+    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|template|impact|bootstrap|doctor|diagnostics|profile|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|rollout|controller|evidence> ...\n\
 validate <bundle.json>\nplan <bundle.json> <accepted.json>\ndiff <plan.json>\nsimulate <current-workspace.json> <proposed-workspace.json> <facts.json> <binding-id>\n\
 show <stored-policies|active-policies|effective-policy> <workspace.json> [facts.json] [binding-id]\n\
 explain decision <workspace.json> <facts.json> <binding-id> <intent> <decision-id>\n\
@@ -100,6 +135,8 @@ bootstrap proposal <assessment.json> <issuer> <audience> <generation>\n\
 bootstrap import <desired-state.json>\n\
 bootstrap sandbox\n\
 doctor <assessment.json> [controller.db] [adapter-inspection.json] [profile.json] [requirement.json]\n\
+diagnostics create <assessment.json> --output <bundle.json> [--controller <controller.db>] [--adapter <adapter-inspection.json>] [--profile <profile.json>] [--requirement <requirement.json>] [--rollout-status <status.json>]\n\
+diagnostics <verify|show> <bundle.json>\n\
 profile <show|verify> <profile.json>\n\
 profile intersect <profile.json> <requirement.json>\n\
 profile controller <socket-or-pipe>\n\
@@ -470,6 +507,15 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                 };
                 let profile_intersection =
                     intersect_profile(&management_profile, &profile_requirement, now)?;
+                let diagnostic_bundle = create_diagnostic_bundle(
+                    &assessment,
+                    None,
+                    None,
+                    Some(&management_profile),
+                    Some(&profile_requirement),
+                    None,
+                    now,
+                )?;
                 let output = json!({
                     "assessment":assessment,
                     "template":template,
@@ -480,6 +526,7 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                     "plan":management_plan,
                     "management_profile":management_profile,
                     "profile_intersection":profile_intersection,
+                    "diagnostic_bundle":diagnostic_bundle,
                     "friction_evidence":friction,
                     "activated":false
                 });
@@ -560,6 +607,110 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                 return Err("DOCTOR_FAILED".into());
             }
         }
+        Some("diagnostics") => match args.get(1).map(String::as_str) {
+            Some("create") => {
+                if args.len() < 5 {
+                    return Err("USAGE_INVALID".into());
+                }
+                let assessment: BootstrapAssessmentV1 = read(&args[2])?;
+                let mut paths = BTreeMap::new();
+                let mut index = 3;
+                while index < args.len() {
+                    let flag = args.get(index).ok_or("USAGE_INVALID")?;
+                    let value = args.get(index + 1).ok_or("USAGE_INVALID")?;
+                    if !matches!(
+                        flag.as_str(),
+                        "--output"
+                            | "--controller"
+                            | "--adapter"
+                            | "--profile"
+                            | "--requirement"
+                            | "--rollout-status"
+                    ) || paths.insert(flag.clone(), value.clone()).is_some()
+                    {
+                        return Err("USAGE_INVALID".into());
+                    }
+                    index += 2;
+                }
+                let output_path = paths.get("--output").ok_or("USAGE_INVALID")?;
+                let controller = paths
+                    .get("--controller")
+                    .map(|path| inspect_controller_database(Path::new(path), 100))
+                    .transpose()
+                    .map_err(|_| "DIAGNOSTIC_CONTROLLER_INVALID")?;
+                let adapter = paths
+                    .get("--adapter")
+                    .map(|path| read::<AdapterInspectionV1>(path))
+                    .transpose()?;
+                let profile = paths
+                    .get("--profile")
+                    .map(|path| read::<ManagementProfileV1>(path))
+                    .transpose()?;
+                let requirement = paths
+                    .get("--requirement")
+                    .map(|path| read::<ManagementProfileRequirementV1>(path))
+                    .transpose()?;
+                let rollout = paths
+                    .get("--rollout-status")
+                    .map(|path| read::<ConvergenceStatusV1>(path))
+                    .transpose()?;
+                let output = create_diagnostic_bundle(
+                    &assessment,
+                    controller.as_ref(),
+                    adapter.as_ref(),
+                    profile.as_ref(),
+                    requirement.as_ref(),
+                    rollout.as_ref(),
+                    Controller::now(),
+                )?;
+                write_private_json(output_path, &output)?;
+                let overall = output.overall.clone();
+                let actions = output.safe_next_actions.len();
+                emit(&output, json_output, || {
+                    format!(
+                        "Diagnostic bundle: {overall:?}\nSafe next actions: {actions}\nWritten: {output_path}"
+                    )
+                });
+            }
+            Some("verify") => {
+                let a = require(&args[2..], 1)?;
+                let output: DiagnosticBundleV1 = read(&a[0])?;
+                validate_diagnostic_bundle(&output, Controller::now())?;
+                let digest = output.payload_digest.clone();
+                emit(&output, json_output, || {
+                    format!("Diagnostic bundle valid: {digest}")
+                });
+            }
+            Some("show") => {
+                let a = require(&args[2..], 1)?;
+                let output: DiagnosticBundleV1 = read(&a[0])?;
+                validate_diagnostic_bundle(&output, Controller::now())?;
+                let overall = output.overall.clone();
+                let degraded = output
+                    .checks
+                    .iter()
+                    .filter(|check| check.state != CheckState::Pass)
+                    .map(|check| format!("{}: {}", check.check_id, check.reason_code))
+                    .collect::<Vec<_>>();
+                let actions = output.safe_next_actions.clone();
+                emit(&output, json_output, || {
+                    format!(
+                        "Overall: {overall:?}\nFindings:\n{}\nSafe next actions:\n{}",
+                        if degraded.is_empty() {
+                            "none".into()
+                        } else {
+                            degraded.join("\n")
+                        },
+                        if actions.is_empty() {
+                            "none".into()
+                        } else {
+                            actions.join("\n")
+                        }
+                    )
+                });
+            }
+            _ => return Err("USAGE_INVALID".into()),
+        },
         Some("profile") => match args.get(1).map(String::as_str) {
             Some("show") => {
                 let a = require(&args[2..], 1)?;
