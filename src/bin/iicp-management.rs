@@ -1,3 +1,4 @@
+use base64::{engine::general_purpose::STANDARD, Engine};
 use iicp_management_core::adapters::{validate_adapter_inspection, AdapterInspectionV1};
 use iicp_management_core::apply_gate::{preview_apply, LocalApplyGateV1};
 use iicp_management_core::bootstrap::{
@@ -24,6 +25,9 @@ use iicp_management_core::recovery::{
     validate_recovery_gate, LocalRecoveryExecutionV1, LocalRecoveryGateV1,
     RECOVERY_EXECUTION_SCHEMA,
 };
+use iicp_management_core::rollout::{
+    validate_manifest, OperationRunV1, PartialAcceptanceV1, RolloutStore, RunState,
+};
 use iicp_management_core::templates::{
     builtin_templates, preview_impact, render_template, template_by_id, CompatibilityStatus,
     ImpactCandidateV1, ImpactRequestV1, TemplateRenderRequestV1, IMPACT_SCHEMA,
@@ -40,6 +44,12 @@ use std::{
     path::Path,
     process::ExitCode,
 };
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RolloutExecutors {
+    executors: BTreeMap<String, String>,
+}
 
 fn read<T: DeserializeOwned>(path: &str) -> Result<T, String> {
     let bytes = fs::read(path).map_err(|_| format!("INPUT_READ_FAILED:{path}"))?;
@@ -63,7 +73,7 @@ fn emit<T: Serialize>(value: &T, json_output: bool, summary: impl FnOnce() -> St
 }
 
 fn usage() -> &'static str {
-    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|template|impact|bootstrap|doctor|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|controller|evidence> ...\n\
+    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|template|impact|bootstrap|doctor|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|rollout|controller|evidence> ...\n\
 validate <bundle.json>\nplan <bundle.json> <accepted.json>\ndiff <plan.json>\nsimulate <current-workspace.json> <proposed-workspace.json> <facts.json> <binding-id>\n\
 show <stored-policies|active-policies|effective-policy> <workspace.json> [facts.json] [binding-id]\n\
 explain decision <workspace.json> <facts.json> <binding-id> <intent> <decision-id>\n\
@@ -78,6 +88,7 @@ execute-apply <socket-or-pipe> <apply-request.json> <--confirm operation-id|--no
 preview-recovery <recovery-request.json>\n\
 request-recovery <socket-or-pipe> <recovery-request.json> <--confirm operation-id|--non-interactive>\n\
 execute-recovery <socket-or-pipe> <recovery-request.json> <--confirm operation-id|--non-interactive>\n\
+rollout <validate|create|status|pause|resume|run-batch|retry-target|accept-partial> ...\n\
 bootstrap <assess|export> <assessment.json>\n\
 bootstrap proposal <assessment.json> <issuer> <audience> <generation>\n\
 bootstrap import <desired-state.json>\n\
@@ -641,6 +652,139 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                 emit(&output, json_output, || {
                     format!("Recovery {}: {:?}", output.operation_id, output.outcome)
                 });
+            }
+        }
+        Some("rollout") => {
+            let now = Controller::now();
+            match args.get(1).map(String::as_str) {
+                Some("validate") => {
+                    let a = require(&args[2..], 1)?;
+                    let manifest: OperationRunV1 = read(&a[0])?;
+                    let digest = validate_manifest(&manifest, now)?;
+                    emit(
+                        &json!({"valid": true, "run_id": manifest.run_id, "manifest_digest": digest}),
+                        json_output,
+                        || "Rollout manifest valid; no target action attempted".into(),
+                    );
+                }
+                Some("create") => {
+                    let a = require(&args[2..], 2)?;
+                    let manifest: OperationRunV1 = read(&a[1])?;
+                    let mut store = RolloutStore::open(Path::new(&a[0]))?;
+                    let output = store.create(&manifest, now)?;
+                    emit(&output, json_output, || {
+                        format!("Rollout {} created in {:?}", output.run_id, output.state)
+                    });
+                }
+                Some("status") | Some("pause") | Some("resume") => {
+                    let a = require(&args[2..], 2)?;
+                    let mut store = RolloutStore::open(Path::new(&a[0]))?;
+                    let output = match args[1].as_str() {
+                        "status" => store.status(&a[1])?,
+                        "pause" => store.pause(&a[1], now)?,
+                        _ => store.resume(&a[1], now)?,
+                    };
+                    emit(&output, json_output, || {
+                        format!(
+                            "Rollout {}: {:?}, batch {}",
+                            output.run_id, output.state, output.current_batch
+                        )
+                    });
+                }
+                Some("run-batch") => {
+                    let a = require(&args[2..], 5)?;
+                    if a[3] != "--confirm" || a[4] != a[1] {
+                        return Err("ROLLOUT_CONFIRMATION_REQUIRED".into());
+                    }
+                    let config: RolloutExecutors = read(&a[2])?;
+                    let mut store = RolloutStore::open(Path::new(&a[0]))?;
+                    for target in store.runnable_targets(&a[1])? {
+                        store.mark_running(&a[1], &target.target_id, now)?;
+                        let result = config
+                            .executors
+                            .get(&target.executor_ref)
+                            .ok_or("ROLLOUT_EXECUTOR_NOT_CONFIGURED".into())
+                            .and_then(|endpoint| {
+                                execute_apply(
+                                    Path::new(endpoint),
+                                    &LocalApplyExecutionV1 {
+                                        schema_version: EXECUTION_SCHEMA.into(),
+                                        gate: target.gate.clone(),
+                                    },
+                                )
+                            });
+                        let status = match result {
+                            Ok(receipt) => store.record_receipt(
+                                &a[1],
+                                &target.target_id,
+                                &receipt,
+                                Controller::now(),
+                            )?,
+                            Err(error) => store.record_execution_error(
+                                &a[1],
+                                &target.target_id,
+                                &error,
+                                Controller::now(),
+                            )?,
+                        };
+                        if status.state == RunState::Paused {
+                            break;
+                        }
+                    }
+                    let output = store.status(&a[1])?;
+                    emit(&output, json_output, || {
+                        format!(
+                            "Rollout {}: {:?}, batch {}",
+                            output.run_id, output.state, output.current_batch
+                        )
+                    });
+                }
+                Some("retry-target") => {
+                    let a = require(&args[2..], 6)?;
+                    if a[4] != "--confirm" || a[5] != a[1] {
+                        return Err("ROLLOUT_CONFIRMATION_REQUIRED".into());
+                    }
+                    let config: RolloutExecutors = read(&a[3])?;
+                    let mut store = RolloutStore::open(Path::new(&a[0]))?;
+                    let target = store.prepare_retry(&a[1], &a[2], now)?;
+                    let endpoint = config
+                        .executors
+                        .get(&target.executor_ref)
+                        .ok_or("ROLLOUT_EXECUTOR_NOT_CONFIGURED")?;
+                    let execution = LocalApplyExecutionV1 {
+                        schema_version: EXECUTION_SCHEMA.into(),
+                        gate: target.gate,
+                    };
+                    let output = match execute_apply(Path::new(endpoint), &execution) {
+                        Ok(receipt) => {
+                            store.record_receipt(&a[1], &a[2], &receipt, Controller::now())?
+                        }
+                        Err(error) => {
+                            store.record_execution_error(&a[1], &a[2], &error, Controller::now())?
+                        }
+                    };
+                    emit(&output, json_output, || {
+                        format!("Rollout {} retry: {:?}", output.run_id, output.state)
+                    });
+                }
+                Some("accept-partial") => {
+                    let a = require(&args[2..], 3)?;
+                    let acceptance: PartialAcceptanceV1 = read(&a[1])?;
+                    let key_text = fs::read_to_string(&a[2])
+                        .map_err(|_| format!("INPUT_READ_FAILED:{}", a[2]))?;
+                    let key_bytes = STANDARD
+                        .decode(key_text.trim())
+                        .map_err(|_| "PARTIAL_ACCEPTANCE_KEY_INVALID")?;
+                    let key: [u8; 32] = key_bytes
+                        .try_into()
+                        .map_err(|_| "PARTIAL_ACCEPTANCE_KEY_INVALID")?;
+                    let mut store = RolloutStore::open(Path::new(&a[0]))?;
+                    let output = store.accept_partial(&acceptance, key, now)?;
+                    emit(&output, json_output, || {
+                        format!("Partial convergence accepted for {}", output.run_id)
+                    });
+                }
+                _ => return Err("USAGE_INVALID".into()),
             }
         }
         Some("adapter") if args.get(1).map(String::as_str) == Some("inspect") => {

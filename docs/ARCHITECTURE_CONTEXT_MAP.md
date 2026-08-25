@@ -17,6 +17,7 @@ administrator, or product-specific operator experiences.
 | Adoption projection | Evidence-bound observation, recommendation and friction measurements | Trust establishment, approval or mutation authority |
 | Environment bootstrap and adoption | Preflight observations, non-authorizing recommendations, required decisions, proposals and friction evidence | Trust establishment, package installation internals, secret values or activation |
 | Policy templates and impact preview | Versioned template inputs, deterministic rendering and evidence-bound change projection | Independent policy semantics, activation authority, invented operational metrics or convergence claims |
+| Staged rollout coordination | Immutable target sets, canary and batch order, durable per-target lifecycle evidence, explicit retry and signed partial acceptance | Target authorization, global transactions, automatic compensation, cross-domain authority or continuous remediation |
 
 ## State flow
 

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/contracts/management-rollout-v1.schema.json",
+  "title": "IICP management rollout v1",
+  "oneOf": [
+    { "$ref": "#/$defs/run" },
+    { "$ref": "#/$defs/status" },
+    { "$ref": "#/$defs/partialAcceptance" }
+  ],
+  "$defs": {
+    "run": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version","run_id","administrative_domain","audience","failure_policy","created_at","expires_at","targets","authorizes_target_execution"],
+      "properties": {
+        "schema_version": {"const":"iicp.management-rollout.v1"}, "run_id":{"type":"string","minLength":1},
+        "administrative_domain":{"type":"string","minLength":1}, "audience":{"type":"string","minLength":1},
+        "failure_policy":{"enum":["stop_and_hold","continue_independent"]}, "created_at":{"type":"integer","minimum":0},
+        "expires_at":{"type":"integer","minimum":1}, "authorizes_target_execution":{"const":false},
+        "targets":{"type":"array","minItems":1,"maxItems":10000,"items":{"$ref":"#/$defs/target"}}
+      }
+    },
+    "target": {
+      "type":"object","additionalProperties":false,"required":["target_id","executor_ref","batch","required","gate"],
+      "properties":{"target_id":{"type":"string","minLength":1},"executor_ref":{"type":"string","minLength":1},"batch":{"type":"integer","minimum":0},"required":{"type":"boolean"},"gate":{"type":"object"}}
+    },
+    "status": {
+      "type":"object","additionalProperties":false,"required":["schema_version","run_id","manifest_digest","version","state","current_batch","partial_accepted","authorizes_target_execution","targets"],
+      "properties":{"schema_version":{"const":"iicp.management-rollout.v1"},"run_id":{"type":"string"},"manifest_digest":{"type":"string"},"version":{"type":"integer"},"state":{"enum":["pending","running","paused","converged","partially_converged","failed"]},"current_batch":{"type":"integer"},"partial_accepted":{"type":"boolean"},"authorizes_target_execution":{"const":false},"targets":{"type":"array"}}
+    },
+    "partialAcceptance": {
+      "type":"object","additionalProperties":false,"required":["schema_version","acceptance_id","issuer_id","audience","administrative_domain","run_id","manifest_digest","expected_run_version","issued_at","expires_at","signature_profile","signature"],
+      "properties":{"schema_version":{"const":"iicp.management-partial-acceptance.v1"},"acceptance_id":{"type":"string","minLength":1},"issuer_id":{"type":"string","minLength":1},"audience":{"type":"string","minLength":1},"administrative_domain":{"type":"string","minLength":1},"run_id":{"type":"string","minLength":1},"manifest_digest":{"type":"string","minLength":1},"expected_run_version":{"type":"integer"},"issued_at":{"type":"integer"},"expires_at":{"type":"integer"},"signature_profile":{"type":"string","minLength":1},"signature":{"type":"string","minLength":1}}
+    }
+  }
+}
