@@ -1,6 +1,7 @@
 # ADR-005: Staged rollout coordination is non-authorizing
 
-**Status:** accepted  
+**Status:** accepted
+
 **Date:** 2026-08-25
 
 ## Context
