@@ -1,4 +1,4 @@
-# Management Foundation 0.6 developer preview
+# Management Foundation 0.7 developer preview
 
 This preview is for local evaluation of the public IICP management contracts,
 planner, controller and conformance runner. It does not install a remote
@@ -19,6 +19,13 @@ iicp-management bootstrap sandbox
 iicp-management-conformance
 ```
 
+To inspect a supplied local Rust node health snapshot without contacting or
+controlling the node:
+
+```bash
+iicp-management show runtime-health runtime-health.json --target node:local --brief
+```
+
 The first two commands return JSON. `bootstrap sandbox` creates a disposable
 local example and prints its location. The conformance runner exits `0` only
 when every bundled case passes.
@@ -34,12 +41,12 @@ After a reviewed release is published, install the exact version with its
 published lockfile:
 
 ```bash
-cargo install iicp-management-core --version 0.6.0 --locked
+cargo install iicp-management-core --version 0.7.0 --locked
 ```
 
 Do not remove `--locked` if installation fails. A locked failure means the
 approved dependency graph could not be reproduced and should be investigated.
-The 0.6 readiness process tests the packaged `.crate`; it does not authorize
+The 0.7 readiness process tests the packaged `.crate`; it does not authorize
 publication by itself.
 
 ## Offline bundle
@@ -50,8 +57,8 @@ the packaged source and vendored dependencies. Transfer both the bundle and
 the extracted directory:
 
 ```bash
-tar -xzf iicp-management-core-0.6.0-offline.tar.gz
-cd iicp-management-core-0.6.0
+tar -xzf iicp-management-core-0.7.0-offline.tar.gz
+cd iicp-management-core-0.7.0
 CARGO_HOME="$(mktemp -d)" cargo install --offline --locked --path .
 iicp-management-conformance
 ```
@@ -62,7 +69,7 @@ transfer source.
 
 ## Release validation
 
-The `0.6.0` package is a developer-preview release candidate until the guarded
+The `0.7.0` package is a developer-preview release candidate until the guarded
 publisher verifies crates.io and the immutable release assets. Release
 preparation from a clean, reviewed checkout uses `scripts/release_readiness.sh`; do not
 substitute an unlocked registry install. The readiness lane exercises the
