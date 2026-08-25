@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/schemas/management-release-manifest-v1.schema.json",
+  "title": "IICP Management Foundation release-readiness manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "product", "version", "channel", "commit", "validated_target", "artifacts", "contracts", "binaries", "known_limitations", "authorizes_publication", "authorizes_deployment"],
+  "properties": {
+    "schema": {"const": "iicp.management-release-manifest.v1"},
+    "product": {"const": "iicp-management-core"},
+    "version": {"type": "string", "pattern": "^0\\.1\\.0$"},
+    "channel": {"const": "developer-preview"},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "validated_target": {"type": "string", "minLength": 1},
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["crate", "offline_bundle"],
+      "properties": {
+        "crate": {"$ref": "#/$defs/artifact"},
+        "offline_bundle": {"$ref": "#/$defs/artifact"}
+      }
+    },
+    "contracts": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": {"type": "string", "pattern": "^contracts/.+\\.schema\\.json$"},
+          "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "binaries": {"type": "array", "minItems": 3, "items": {"type": "string"}, "uniqueItems": true},
+    "known_limitations": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "authorizes_publication": {"const": false},
+    "authorizes_deployment": {"const": false}
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    }
+  }
+}
