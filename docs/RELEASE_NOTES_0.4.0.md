@@ -1,6 +1,6 @@
-# Management Foundation 0.4.0-rc.1 candidate
+# Management Foundation 0.4.0
 
-This untagged candidate adds the administrator trial evidence harness. It can
+This developer preview adds the administrator trial evidence harness. It can
 record, verify and summarize privacy-bounded observations around any management
 interface while preserving failed, abandoned and assisted runs.
 
@@ -12,5 +12,4 @@ All evidence is observer-declared and non-authorizing. Numerical coverage does
 not approve a release gate, prove independence, authorize a management change
 or establish representative administrator adoption.
 
-This candidate is intended for locked package and offline-install validation.
-It must not be tagged, published or deployed without a separate decision.
+The release is suitable for locked package and offline-install validation. Publication does not deploy a management service or prove representative administrator adoption.

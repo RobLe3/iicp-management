@@ -160,7 +160,7 @@ fn emit<T: Serialize>(value: &T, json_output: bool, summary: impl FnOnce() -> St
 }
 
 fn usage() -> &'static str {
-    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|template|impact|bootstrap|doctor|diagnostics|profile|trial|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|rollout|controller|evidence> ...\n\
+    "usage: iicp-management [--json] <completion|validate|plan|diff|simulate|show|explain|verify-receipt|template|impact|bootstrap|doctor|diagnostics|profile|trial|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|rollout|controller|evidence> ...\n\
 validate <bundle.json>\nplan <bundle.json> <accepted.json>\ndiff <plan.json>\nsimulate <current-workspace.json> <proposed-workspace.json> <facts.json> <binding-id>\n\
 show <stored-policies|active-policies|effective-policy> <workspace.json> [facts.json] [binding-id]\n\
 explain decision <workspace.json> <facts.json> <binding-id> <intent> <decision-id>\n\
@@ -203,6 +203,22 @@ fn require(args: &[String], count: usize) -> Result<&[String], String> {
 }
 
 fn run(args: &[String], json_output: bool) -> Result<(), String> {
+    if args.first().map(String::as_str) == Some("__complete") {
+        if json_output {
+            return Err("USAGE_INVALID".into());
+        }
+        for value in iicp_management_core::completion::candidates(&args[1..]) {
+            println!("{value}");
+        }
+        return Ok(());
+    }
+    if args.first().map(String::as_str) == Some("completion") {
+        if json_output || args.len() != 2 {
+            return Err("USAGE_INVALID".into());
+        }
+        print!("{}", iicp_management_core::completion::script(&args[1])?);
+        return Ok(());
+    }
     match args.first().map(String::as_str) {
         Some("validate") => {
             let a = require(&args[1..], 1)?;

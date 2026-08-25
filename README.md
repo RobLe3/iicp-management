@@ -398,3 +398,16 @@ state.
 
 A copy-and-paste walkthrough and deterministic fixtures are available in
 [`docs/POLICY_TEMPLATE_WORKFLOW.md`](docs/POLICY_TEMPLATE_WORKFLOW.md).
+
+## Shell completion
+
+Generate completion for the management CLI without reading policy or controller state:
+
+```bash
+iicp-management completion bash
+iicp-management completion zsh
+iicp-management completion fish
+iicp-management completion powershell
+```
+
+The generated script delegates only to the static `__complete` endpoint. It does not enumerate managed objects or expose policy data.

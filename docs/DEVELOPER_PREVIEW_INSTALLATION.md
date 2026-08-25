@@ -62,7 +62,7 @@ transfer source.
 
 ## Untagged 0.4 candidate validation
 
-The `0.4.0-rc.1` worktree is an unpublished candidate. Validate it from a clean
+The `0.4.0` worktree is an developer preview. Validate it from a clean
 reviewed checkout with `scripts/release_readiness.sh`; do not substitute an
 unlocked registry install or treat the candidate version as a published
 package. The readiness lane exercises the administrator trial workflow through
