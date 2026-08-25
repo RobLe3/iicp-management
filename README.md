@@ -31,7 +31,7 @@ automation clients, while the domain-local controller retains final authority.
 
 [![Terminal view showing an effective finance policy and its eligible, fallback and denied execution paths](https://raw.githubusercontent.com/RobLe3/iicp-management/f522cfdd5b17ebdb6a9652b7d7842437d6bef57c/media/showcases/iicp-management-sap-cap-future-workflow-poster.jpg)](https://raw.githubusercontent.com/RobLe3/iicp-management/f522cfdd5b17ebdb6a9652b7d7842437d6bef57c/media/showcases/iicp-management-sap-cap-future-workflow.mp4)
 
-*Select the image to play the 2 minute 17 second video. The recording is a
+*Select the image to open the 2 minute 17 second video. The recording is a
 design concept, not a released SAP connector, production deployment or stable
 command interface. `IIOS` is a provisional user-experience name for the IICP
 Management Environment. SAP is an illustrative integration and no endorsement,
