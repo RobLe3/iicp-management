@@ -12,7 +12,7 @@ authority or production deployment.
 
 For a bounded five-minute evaluation, packaged-crate rules and the offline
 bundle procedure, see the
-[`0.2 developer-preview installation guide`](docs/DEVELOPER_PREVIEW_INSTALLATION.md).
+[`0.5 developer-preview installation guide`](docs/DEVELOPER_PREVIEW_INSTALLATION.md).
 
 ## Why this foundation exists
 
@@ -116,8 +116,15 @@ local evidence projections and explicitly carry no mutation authority.
 cargo run --locked --bin iicp-management -- validate desired-state.json
 cargo run --locked --bin iicp-management -- --json plan desired-state.json accepted-state.json
 cargo run --locked --bin iicp-management -- show effective-policy workspace.json facts.json binding:example
+cargo run --locked --bin iicp-management -- show application application:example policy brief \
+  --binding binding:example --workspace workspace.json --facts facts.json
+cargo run --locked --bin iicp-management -- show routing urn:iicp:intent:rules:evaluate:v1 \
+  --binding binding:example --workspace workspace.json --facts facts.json --brief
 cargo run --locked --bin iicp-management -- controller status controller.db
 ```
+
+The routing view is a dynamic resolution summary derived from the supplied
+evidence snapshot. It does not advertise a fixed provider or next hop.
 
 See [`examples/finance`](examples/finance/README.md) for a complete disposable
 workflow. These commands do not authorize or apply changes. Command text and

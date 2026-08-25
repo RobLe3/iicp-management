@@ -51,5 +51,23 @@
       "input": {"current":"deny","proposed":"allow"},
       "expected": {"decision_changed":true,"newly_allowed":true,"newly_denied":false}
     }
+    ,{
+      "id": "PL1-APPLICATION-BRIEF-ACTIVE",
+      "operation": "project_application_brief",
+      "input": {"application_id":"application:finance","binding_id":"binding:finance","active_generation":7,"decision":"allow"},
+      "expected": {"application_id":"application:finance","binding_id":"binding:finance","active_generation":7,"decision":"allow"}
+    },
+    {
+      "id": "PL1-RESOLUTION-DENY-NOT-ELIGIBLE",
+      "operation": "project_resolution",
+      "input": {"intent":"urn:iicp:intent:finance:invoice-analysis:v1","decision":"deny","preferences":["local-eu"]},
+      "expected": {"intent":"urn:iicp:intent:finance:invoice-analysis:v1","decision":"deny","eligible":false,"preferences":["local-eu"]}
+    },
+    {
+      "id": "PL1-RESOLUTION-INDETERMINATE-NOT-ELIGIBLE",
+      "operation": "project_resolution",
+      "input": {"intent":"urn:iicp:intent:finance:invoice-analysis:v1","decision":"indeterminate","preferences":[]},
+      "expected": {"intent":"urn:iicp:intent:finance:invoice-analysis:v1","decision":"indeterminate","eligible":false,"preferences":[]}
+    }
   ]
 }

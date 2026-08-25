@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0 — 2026-08-25 developer preview
+
+- Expose application-policy briefs and dynamic, evidence-bound routing summaries through the operator CLI.
+- Extend static shell completion and portable policy-lifecycle projections for the new inspection commands.
+- Validate generated release manifests against the packaged schema and current Cargo version.
+- Reconcile the developer-preview installation guide with the current release line.
+
 ## 0.4.0 — 2026-08-25 developer preview
 
 - Add privacy-bounded administrator trial-session and friction-evidence v2 contracts.

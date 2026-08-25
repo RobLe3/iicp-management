@@ -21,9 +21,9 @@ class PolicyLifecycleConformanceTest(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0)
             report = json.loads(output.read_text())
-            self.assertEqual(report["passed"], 8)
+            self.assertEqual(report["passed"], 11)
             self.assertEqual(report["failed"], 0)
-            self.assertEqual(len({case["id"] for case in report["results"]}), 8)
+            self.assertEqual(len({case["id"] for case in report["results"]}), 11)
 
 
 if __name__ == "__main__":

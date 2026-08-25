@@ -8,7 +8,10 @@
   "properties": {
     "schema": {"const": "iicp.management-release-manifest.v1"},
     "product": {"const": "iicp-management-core"},
-    "version": {"type": "string", "pattern": "^0\\.1\\.0$"},
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$"
+    },
     "channel": {"const": "developer-preview"},
     "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "validated_target": {"type": "string", "minLength": 1},

@@ -163,6 +163,8 @@ fn usage() -> &'static str {
     "usage: iicp-management [--json] <completion|validate|plan|diff|simulate|show|explain|verify-receipt|template|impact|bootstrap|doctor|diagnostics|profile|trial|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|rollout|controller|evidence> ...\n\
 validate <bundle.json>\nplan <bundle.json> <accepted.json>\ndiff <plan.json>\nsimulate <current-workspace.json> <proposed-workspace.json> <facts.json> <binding-id>\n\
 show <stored-policies|active-policies|effective-policy> <workspace.json> [facts.json] [binding-id]\n\
+show application <application-id> policy brief --binding <binding-id> --workspace <workspace.json> --facts <facts.json>\n\
+show routing <intent> --binding <binding-id> --workspace <workspace.json> --facts <facts.json> [--brief] [--preference <value>]\n\
 explain decision <workspace.json> <facts.json> <binding-id> <intent> <decision-id>\n\
 verify-receipt <receipt.json> <plan.json> <audience>\nadapter inspect <adapter-inspection.json>\n\
 template <list|show> [template-id] [revision-id]\n\
@@ -200,6 +202,58 @@ fn require(args: &[String], count: usize) -> Result<&[String], String> {
     } else {
         Err("USAGE_INVALID".into())
     }
+}
+
+#[derive(Default)]
+struct InspectionFlags {
+    binding: Option<String>,
+    workspace: Option<String>,
+    facts: Option<String>,
+    brief: bool,
+    preferences: Vec<String>,
+}
+
+fn inspection_flags(args: &[String], routing: bool) -> Result<InspectionFlags, String> {
+    let mut output = InspectionFlags::default();
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--binding" | "--workspace" | "--facts" | "--preference" => {
+                let flag = args[index].as_str();
+                let value = args.get(index + 1).ok_or("USAGE_INVALID")?.clone();
+                match flag {
+                    "--binding" => {
+                        if output.binding.replace(value).is_some() {
+                            return Err("USAGE_INVALID".into());
+                        }
+                    }
+                    "--workspace" => {
+                        if output.workspace.replace(value).is_some() {
+                            return Err("USAGE_INVALID".into());
+                        }
+                    }
+                    "--facts" => {
+                        if output.facts.replace(value).is_some() {
+                            return Err("USAGE_INVALID".into());
+                        }
+                    }
+                    "--preference" if routing => output.preferences.push(value),
+                    "--preference" => return Err("USAGE_INVALID".into()),
+                    _ => {}
+                }
+                index += 2;
+            }
+            "--brief" if routing && !output.brief => {
+                output.brief = true;
+                index += 1;
+            }
+            _ => return Err("USAGE_INVALID".into()),
+        }
+    }
+    if output.binding.is_none() || output.workspace.is_none() || output.facts.is_none() {
+        return Err("USAGE_INVALID".into());
+    }
+    Ok(output)
 }
 
 fn run(args: &[String], json_output: bool) -> Result<(), String> {
@@ -279,9 +333,9 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
             if args.len() < 3 {
                 return Err("USAGE_INVALID".into());
             }
-            let repo = repository(&args[2])?;
             match args[1].as_str() {
                 "stored-policies" | "active-policies" => {
+                    let repo = repository(&args[2])?;
                     let active = args[1] == "active-policies";
                     let output = repo.policy_inventory(active).map_err(|e| e.to_string())?;
                     let lines = output
@@ -306,6 +360,7 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                     if args.len() != 5 {
                         return Err("USAGE_INVALID".into());
                     }
+                    let repo = repository(&args[2])?;
                     let facts: Value = read(&args[3])?;
                     let output = repo
                         .effective_policy(&args[4], &facts)
@@ -314,6 +369,76 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                     let reasons = output.reason_codes.join(", ");
                     emit(&output, json_output, || {
                         format!("Effective policy: {decision:?}\nReasons: {reasons}")
+                    });
+                }
+                "application"
+                    if args.get(3).map(String::as_str) == Some("policy")
+                        && args.get(4).map(String::as_str) == Some("brief") =>
+                {
+                    let flags = inspection_flags(&args[5..], false)?;
+                    let binding = flags.binding.as_deref().unwrap();
+                    let repo = repository(flags.workspace.as_deref().unwrap())?;
+                    let facts: Value = read(flags.facts.as_deref().unwrap())?;
+                    let output = repo
+                        .application_policy_brief(binding, &facts)
+                        .map_err(|error| error.to_string())?;
+                    if output.application_id != args[2] {
+                        return Err("APPLICATION_BINDING_MISMATCH".into());
+                    }
+                    let application = output.application_id.clone();
+                    let binding = output.binding_id.clone();
+                    let generation = output
+                        .active_generation
+                        .map(|value| value.to_string())
+                        .unwrap_or_else(|| "NOT_ACTIVE".into());
+                    let decision = output.effective_policy.decision.clone();
+                    let policies = output
+                        .effective_policy
+                        .sources
+                        .iter()
+                        .map(|source| {
+                            format!(
+                                "{}@{} {:?}",
+                                source.policy_id, source.revision_id, source.decision
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    emit(&output, json_output, || {
+                        format!(
+                            "Application: {application}\nBinding: {binding}\nActive generation: {generation}\nDecision: {decision:?}\nPolicies:\n{policies}\nEvidence snapshot: {}",
+                            output.effective_policy.fact_snapshot_digest
+                        )
+                    });
+                }
+                "routing" => {
+                    let flags = inspection_flags(&args[3..], true)?;
+                    let binding = flags.binding.as_deref().unwrap();
+                    let repo = repository(flags.workspace.as_deref().unwrap())?;
+                    let facts: Value = read(flags.facts.as_deref().unwrap())?;
+                    let output = repo
+                        .resolution_summary(binding, &args[2], &facts, flags.preferences)
+                        .map_err(|error| error.to_string())?;
+                    let decision = output.decision.clone();
+                    let eligible = output.eligible;
+                    let intent = output.intent.clone();
+                    let preferences = if output.preferences.is_empty() {
+                        "none supplied".into()
+                    } else {
+                        output.preferences.join(", ")
+                    };
+                    let brief = flags.brief;
+                    emit(&output, json_output, || {
+                        if brief {
+                            format!(
+                                "{intent}: {decision:?}; eligible={eligible}; dynamic evidence-bound resolution"
+                            )
+                        } else {
+                            format!(
+                                "Intent: {intent}\nResolution: dynamic, evaluated from the supplied evidence snapshot\nDecision: {decision:?}\nEligible: {eligible}\nPreferences: {preferences}\nEffective policy: {}\nEvidence snapshot: {}",
+                                output.effective_policy_digest, output.evidence_snapshot_digest
+                            )
+                        }
                     });
                 }
                 _ => return Err("USAGE_INVALID".into()),

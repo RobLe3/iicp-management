@@ -144,4 +144,6 @@ offline="$OUTPUT/iicp-management-core-$version-offline.tar.gz"
 tar -czf "$offline" -C "$source_root" "iicp-management-core-$version"
 cp "$crate" "$OUTPUT/"
 python3 scripts/generate_release_manifest.py --root "$ROOT" --crate "$OUTPUT/$(basename "$crate")" --offline-bundle "$offline" --commit "$head" --output "$OUTPUT/release-manifest.json"
+IICP_RELEASE_MANIFEST="$OUTPUT/release-manifest.json" \
+  cargo test --locked --test release_manifest generated_release_manifest_matches_schema_and_artifact_version -- --exact
 printf 'release readiness passed\nmanifest: %s\n' "$OUTPUT/release-manifest.json"

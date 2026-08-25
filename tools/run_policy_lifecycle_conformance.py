@@ -88,6 +88,20 @@ def run(case: dict[str, object]) -> dict[str, object]:
             "newly_allowed": current != "allow" and proposed == "allow",
             "newly_denied": current != "deny" and proposed == "deny",
         }
+    if operation == "project_application_brief":
+        return {
+            "application_id": value["application_id"],
+            "binding_id": value["binding_id"],
+            "active_generation": value["active_generation"],
+            "decision": value["decision"],
+        }
+    if operation == "project_resolution":
+        return {
+            "intent": value["intent"],
+            "decision": value["decision"],
+            "eligible": value["decision"] == "allow",
+            "preferences": value["preferences"],
+        }
     raise ValueError(f"unsupported operation: {operation}")
 
 

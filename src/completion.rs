@@ -44,7 +44,16 @@ pub fn candidates(tokens: &[String]) -> Vec<&'static str> {
     } else {
         match path.as_slice() {
             [] => COMMANDS,
-            ["show"] => &["active-policies", "effective-policy", "stored-policies"],
+            ["show"] => &[
+                "active-policies",
+                "application",
+                "effective-policy",
+                "routing",
+                "stored-policies",
+            ],
+            ["show", "application"] => &["application-id"],
+            ["show", "application", _] => &["policy"],
+            ["show", "application", _, "policy"] => &["brief"],
             ["explain"] => &["decision"],
             ["template"] => &["list", "render", "show"],
             ["impact"] => &["preview"],
