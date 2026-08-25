@@ -38,6 +38,7 @@ use iicp_management_core::rollout::{
     validate_manifest, ConvergenceStatusV1, OperationRunV1, PartialAcceptanceV1, RolloutStore,
     RunState,
 };
+use iicp_management_core::sandbox::{run_authorized_sandbox, SandboxScenario};
 use iicp_management_core::templates::{
     builtin_templates, preview_impact, render_template, template_by_id, CompatibilityStatus,
     ImpactCandidateV1, ImpactRequestV1, TemplateRenderRequestV1, IMPACT_SCHEMA,
@@ -133,7 +134,7 @@ rollout <validate|create|status|pause|resume|run-batch|retry-target|accept-parti
 bootstrap <assess|export> <assessment.json>\n\
 bootstrap proposal <assessment.json> <issuer> <audience> <generation>\n\
 bootstrap import <desired-state.json>\n\
-bootstrap sandbox\n\
+bootstrap sandbox [--exercise authorized-local] [--scenario success|verification-failure|interrupted-resume]\n\
 doctor <assessment.json> [controller.db] [adapter-inspection.json] [profile.json] [requirement.json]\n\
 diagnostics create <assessment.json> --output <bundle.json> [--controller <controller.db>] [--adapter <adapter-inspection.json>] [--profile <profile.json>] [--requirement <requirement.json>] [--rollout-status <status.json>]\n\
 diagnostics <verify|show> <bundle.json>\n\
@@ -348,6 +349,21 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                 let output = json!({"valid":true,"bundle_digest":digest,"authorizes_mutation":false,"activated":false});
                 emit(&output, json_output, || {
                     "Import valid; no state activated".into()
+                });
+            }
+            Some("sandbox") if args.get(2).map(String::as_str) == Some("--exercise") => {
+                if args.get(3).map(String::as_str) != Some("authorized-local") {
+                    return Err("USAGE_INVALID".into());
+                }
+                let scenario = match args.get(4).map(String::as_str) {
+                    None => SandboxScenario::Success,
+                    Some("--scenario") if args.len() == 6 => SandboxScenario::parse(&args[5])?,
+                    _ => return Err("USAGE_INVALID".into()),
+                };
+                let output = run_authorized_sandbox(scenario, Controller::now())?;
+                let state = format!("{:?}", output.lifecycle.state);
+                emit(&output, json_output, || {
+                    format!("Authorized local sandbox: {state}")
                 });
             }
             Some("sandbox") if args.len() == 2 => {
