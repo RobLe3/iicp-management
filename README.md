@@ -168,6 +168,12 @@ digests, but still reports `target_effect: not_attempted` and
 `convergence: not_evaluated`. Adapter execution belongs to a later lifecycle
 stage.
 
+## Staged multi-target convergence
+
+The rollout contract coordinates exact local apply gates across an immutable target set. Batch zero is a required canary; later batches advance only from durable per-target receipts. The coordinator grants no target authority, retries are explicit, and partial convergence remains visible even when an operator signs an acceptance record.
+
+See [the staged rollout runbook](docs/STAGED_ROLLOUT_RUNBOOK.md) and [ADR-005](docs/ADR-005-staged-rollout-coordination-is-non-authorizing.md). No production deployment is included.
+
 ## Authority boundary
 
 The contracts do not grant management authority. A future domain-local
