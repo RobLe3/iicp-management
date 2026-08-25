@@ -121,6 +121,72 @@ fn application_policy_and_dynamic_routing_are_inspectable() {
 }
 
 #[test]
+fn candidate_routing_inspection_is_non_authorizing_and_does_not_rank() {
+    let routing = cli()
+        .args([
+            "--json",
+            "show",
+            "routing",
+            "urn:iicp:intent:finance:invoice-analysis:v1",
+            "--binding",
+            "binding:finance",
+            "--workspace",
+            &example("proposed-workspace.json"),
+            "--candidates",
+            &example("candidate-evidence.json"),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        routing.status.success(),
+        "{}",
+        String::from_utf8_lossy(&routing.stderr)
+    );
+    let value: Value = serde_json::from_slice(&routing.stdout).unwrap();
+    assert_eq!(value["eligible"], 1);
+    assert_eq!(value["ineligible"], 1);
+    assert_eq!(value["unresolved"], 1);
+    assert_eq!(value["ranking_applied"], false);
+    assert_eq!(value["authorizes_mutation"], false);
+
+    let human = cli()
+        .args([
+            "show",
+            "routing",
+            "urn:iicp:intent:finance:invoice-analysis:v1",
+            "--binding",
+            "binding:finance",
+            "--workspace",
+            &example("proposed-workspace.json"),
+            "--candidates",
+            &example("candidate-evidence.json"),
+            "--brief",
+        ])
+        .output()
+        .unwrap();
+    assert!(human.status.success());
+    assert!(String::from_utf8_lossy(&human.stdout).contains("ranking not performed"));
+
+    let mixed = cli()
+        .args([
+            "show",
+            "routing",
+            "intent:test",
+            "--binding",
+            "binding:finance",
+            "--workspace",
+            &example("proposed-workspace.json"),
+            "--facts",
+            &example("facts-eu.json"),
+            "--candidates",
+            &example("candidate-evidence.json"),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(mixed.status.code(), Some(2));
+}
+
+#[test]
 fn inspection_rejects_application_mismatch_and_preserves_indeterminate() {
     let mismatch = cli()
         .args([

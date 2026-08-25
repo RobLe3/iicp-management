@@ -1,0 +1,14 @@
+{
+  "schema": "iicp.management-resolution-inspection.cases.v1",
+  "version": "1",
+  "evidence_class": "project-verified",
+  "cases": [
+    {"id":"RI1-ALLOW-COMPATIBLE","decision":"allow","compatibility":"compatible","evidence_expired":false,"expected":{"eligibility":"eligible","reason_code":null}},
+    {"id":"RI1-DENY-COMPATIBLE","decision":"deny","compatibility":"compatible","evidence_expired":false,"expected":{"eligibility":"ineligible","reason_code":null}},
+    {"id":"RI1-INDETERMINATE","decision":"indeterminate","compatibility":"compatible","evidence_expired":false,"expected":{"eligibility":"unresolved","reason_code":null}},
+    {"id":"RI1-INCOMPATIBLE","decision":"allow","compatibility":"incompatible","evidence_expired":false,"expected":{"eligibility":"ineligible","reason_code":"IICP-MGMT-CANDIDATE-INCOMPATIBLE"}},
+    {"id":"RI1-COMPATIBILITY-UNKNOWN","decision":"allow","compatibility":"unknown","evidence_expired":false,"expected":{"eligibility":"unresolved","reason_code":"IICP-MGMT-CANDIDATE-COMPATIBILITY-UNKNOWN"}},
+    {"id":"RI1-STALE-ALLOW","decision":"allow","compatibility":"compatible","evidence_expired":true,"expected":{"eligibility":"unresolved","reason_code":"IICP-MGMT-CANDIDATE-EVIDENCE-STALE"}},
+    {"id":"RI1-STALE-DENY","decision":"deny","compatibility":"compatible","evidence_expired":true,"expected":{"eligibility":"unresolved","reason_code":"IICP-MGMT-CANDIDATE-EVIDENCE-STALE"}}
+  ]
+}

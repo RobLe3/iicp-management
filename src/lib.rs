@@ -17,6 +17,7 @@ pub mod profile;
 pub mod progressive_authority;
 pub mod reconciliation;
 pub mod recovery;
+pub mod resolution;
 pub mod rollout;
 pub mod sandbox;
 pub mod templates;

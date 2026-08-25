@@ -15,6 +15,10 @@ fn candidates_are_static() {
             ],
         ),
         (vec!["show", "application", "app", ""], vec!["policy"]),
+        (
+            vec!["show", "routing", "intent:test", "--c"],
+            vec!["--candidates"],
+        ),
         (vec!["explain", ""], vec!["decision"]),
     ] {
         let tokens = t.into_iter().map(String::from).collect::<Vec<_>>();

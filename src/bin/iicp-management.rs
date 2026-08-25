@@ -34,6 +34,9 @@ use iicp_management_core::recovery::{
     validate_recovery_gate, LocalRecoveryExecutionV1, LocalRecoveryGateV1,
     RECOVERY_EXECUTION_SCHEMA,
 };
+use iicp_management_core::resolution::{
+    inspect_resolution, CandidateEligibilityV1, CandidateEvidenceSnapshotV1,
+};
 use iicp_management_core::rollout::{
     validate_manifest, ConvergenceStatusV1, OperationRunV1, PartialAcceptanceV1, RolloutStore,
     RunState,
@@ -164,7 +167,7 @@ fn usage() -> &'static str {
 validate <bundle.json>\nplan <bundle.json> <accepted.json>\ndiff <plan.json>\nsimulate <current-workspace.json> <proposed-workspace.json> <facts.json> <binding-id>\n\
 show <stored-policies|active-policies|effective-policy> <workspace.json> [facts.json] [binding-id]\n\
 show application <application-id> policy brief --binding <binding-id> --workspace <workspace.json> --facts <facts.json>\n\
-show routing <intent> --binding <binding-id> --workspace <workspace.json> --facts <facts.json> [--brief] [--preference <value>]\n\
+show routing <intent> --binding <binding-id> --workspace <workspace.json> (--facts <facts.json> [--preference <value>]|--candidates <snapshot.json>) [--brief]\n\
 explain decision <workspace.json> <facts.json> <binding-id> <intent> <decision-id>\n\
 verify-receipt <receipt.json> <plan.json> <audience>\nadapter inspect <adapter-inspection.json>\n\
 template <list|show> [template-id] [revision-id]\n\
@@ -209,6 +212,7 @@ struct InspectionFlags {
     binding: Option<String>,
     workspace: Option<String>,
     facts: Option<String>,
+    candidates: Option<String>,
     brief: bool,
     preferences: Vec<String>,
 }
@@ -218,7 +222,7 @@ fn inspection_flags(args: &[String], routing: bool) -> Result<InspectionFlags, S
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
-            "--binding" | "--workspace" | "--facts" | "--preference" => {
+            "--binding" | "--workspace" | "--facts" | "--candidates" | "--preference" => {
                 let flag = args[index].as_str();
                 let value = args.get(index + 1).ok_or("USAGE_INVALID")?.clone();
                 match flag {
@@ -237,6 +241,12 @@ fn inspection_flags(args: &[String], routing: bool) -> Result<InspectionFlags, S
                             return Err("USAGE_INVALID".into());
                         }
                     }
+                    "--candidates" if routing => {
+                        if output.candidates.replace(value).is_some() {
+                            return Err("USAGE_INVALID".into());
+                        }
+                    }
+                    "--candidates" => return Err("USAGE_INVALID".into()),
                     "--preference" if routing => output.preferences.push(value),
                     "--preference" => return Err("USAGE_INVALID".into()),
                     _ => {}
@@ -250,7 +260,16 @@ fn inspection_flags(args: &[String], routing: bool) -> Result<InspectionFlags, S
             _ => return Err("USAGE_INVALID".into()),
         }
     }
-    if output.binding.is_none() || output.workspace.is_none() || output.facts.is_none() {
+    if output.binding.is_none() || output.workspace.is_none() {
+        return Err("USAGE_INVALID".into());
+    }
+    if routing {
+        if output.facts.is_some() == output.candidates.is_some()
+            || (output.candidates.is_some() && !output.preferences.is_empty())
+        {
+            return Err("USAGE_INVALID".into());
+        }
+    } else if output.facts.is_none() || output.candidates.is_some() {
         return Err("USAGE_INVALID".into());
     }
     Ok(output)
@@ -415,6 +434,57 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                     let flags = inspection_flags(&args[3..], true)?;
                     let binding = flags.binding.as_deref().unwrap();
                     let repo = repository(flags.workspace.as_deref().unwrap())?;
+                    if let Some(path) = flags.candidates.as_deref() {
+                        let snapshot: CandidateEvidenceSnapshotV1 = read(path)?;
+                        let output = inspect_resolution(
+                            &repo,
+                            binding,
+                            &args[2],
+                            &snapshot,
+                            Controller::now(),
+                        )
+                        .map_err(|error| error.to_string())?;
+                        let brief = flags.brief;
+                        emit(&output, json_output, || {
+                            if brief {
+                                format!(
+                                    "{}: eligible={}; ineligible={}; unresolved={}; ranking not performed",
+                                    output.intent, output.eligible, output.ineligible, output.unresolved
+                                )
+                            } else {
+                                let entries = output
+                                    .entries
+                                    .iter()
+                                    .map(|entry| {
+                                        let eligibility = match entry.eligibility {
+                                            CandidateEligibilityV1::Eligible => "ELIGIBLE",
+                                            CandidateEligibilityV1::Ineligible => "INELIGIBLE",
+                                            CandidateEligibilityV1::Unresolved => "UNRESOLVED",
+                                        };
+                                        format!(
+                                            "{}  {}  decision={:?}  compatibility={:?}",
+                                            entry.candidate_id,
+                                            eligibility,
+                                            entry.decision,
+                                            entry.compatibility
+                                        )
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("\n");
+                                format!(
+                                    "Intent: {}\nCandidate evidence: {}{}\nEligible: {}\nIneligible: {}\nUnresolved: {}\nRanking/selection: not performed\nCandidates:\n{}",
+                                    output.intent,
+                                    output.evidence_source,
+                                    if output.evidence_expired { " (expired)" } else { "" },
+                                    output.eligible,
+                                    output.ineligible,
+                                    output.unresolved,
+                                    if entries.is_empty() { "No candidates supplied" } else { &entries }
+                                )
+                            }
+                        });
+                        return Ok(());
+                    }
                     let facts: Value = read(flags.facts.as_deref().unwrap())?;
                     let output = repo
                         .resolution_summary(binding, &args[2], &facts, flags.preferences)

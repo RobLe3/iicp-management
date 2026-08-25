@@ -32,12 +32,20 @@ cargo run --locked --bin iicp-management -- explain decision \
   examples/finance/facts-us.json binding:finance \
   urn:iicp:intent:finance:analysis:v1 decision:finance:1
 
+cargo run --locked --bin iicp-management -- show routing \
+  urn:iicp:intent:finance:analysis:v1 \
+  --binding binding:finance \
+  --workspace examples/finance/proposed-workspace.json \
+  --candidates examples/finance/candidate-evidence.json
+
 cargo run --locked --bin iicp-management -- verify-receipt \
   examples/finance/receipt.json examples/finance/plan.json domain:finance
 ```
 
 The proposed policy denies the US candidate because the mandatory EU policy
-does not match. The simulation reports the change from `allow` to `deny`, and
+does not match. Candidate inspection also keeps unknown compatibility
+unresolved and does not rank or select a provider. The simulation reports the
+change from `allow` to `deny`, and
 the explanation identifies `policy:eu-processing` as determining the result.
 These are policy and evidence projections; no provider is selected and no state
 is changed.

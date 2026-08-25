@@ -82,6 +82,7 @@ python3 tools/run_management_conformance.py fixtures/management-portable-conform
 python3 tools/run_policy_lifecycle_conformance.py fixtures/policy-lifecycle-conformance-v1.json
 python3 tools/run_progressive_authority_conformance.py fixtures/progressive-authority-conformance-v1.json
 python3 tools/run_adapter_inspection_conformance.py fixtures/adapter-inspection-conformance-v1.json
+python3 tools/run_resolution_inspection_conformance.py fixtures/resolution-inspection-conformance-v1.json
 ```
 
 The conformance runner accepts an optional fixture path:
@@ -120,11 +121,18 @@ cargo run --locked --bin iicp-management -- show application application:example
   --binding binding:example --workspace workspace.json --facts facts.json
 cargo run --locked --bin iicp-management -- show routing urn:iicp:intent:rules:evaluate:v1 \
   --binding binding:example --workspace workspace.json --facts facts.json --brief
+cargo run --locked --bin iicp-management -- show routing urn:iicp:intent:finance:invoice-analysis:v1 \
+  --binding binding:finance --workspace workspace.json \
+  --candidates candidate-evidence.json --brief
 cargo run --locked --bin iicp-management -- controller status controller.db
 ```
 
-The routing view is a dynamic resolution summary derived from the supplied
-evidence snapshot. It does not advertise a fixed provider or next hop.
+The facts-based routing view remains a single counterfactual policy projection.
+The candidate-aware form evaluates a bounded inventory snapshot and reports
+each candidate as eligible, ineligible or unresolved. Discovery evidence is not
+trust, eligibility is not ranking, and the command performs no selection,
+dispatch or mutation. Expired evidence remains visible and unresolved rather
+than being presented as current eligibility.
 
 See [`examples/finance`](examples/finance/README.md) for a complete disposable
 workflow. These commands do not authorize or apply changes. Command text and
