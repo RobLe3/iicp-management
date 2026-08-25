@@ -369,7 +369,18 @@ fn published_schema_accepts_manifest_status_and_acceptance() {
     let status = store.create(&run, now).unwrap();
     assert!(validator.is_valid(&serde_json::to_value(status).unwrap()));
     let acceptance = PartialAcceptanceV1 {
-        schema_version: PARTIAL_ACCEPTANCE_SCHEMA.into(), acceptance_id: "acceptance:1".into(), issuer_id: "operator:test".into(), audience: "controller:test".into(), administrative_domain: "domain:test".into(), run_id: "run:test".into(), manifest_digest: "sha256:test".into(), expected_run_version: 1, issued_at: now, expires_at: now + 1, signature_profile: SIGNATURE_PROFILE.into(), signature: "signature".into()
+        schema_version: PARTIAL_ACCEPTANCE_SCHEMA.into(),
+        acceptance_id: "acceptance:1".into(),
+        issuer_id: "operator:test".into(),
+        audience: "controller:test".into(),
+        administrative_domain: "domain:test".into(),
+        run_id: "run:test".into(),
+        manifest_digest: "sha256:test".into(),
+        expected_run_version: 1,
+        issued_at: now,
+        expires_at: now + 1,
+        signature_profile: SIGNATURE_PROFILE.into(),
+        signature: "signature".into(),
     };
     assert!(validator.is_valid(&serde_json::to_value(acceptance).unwrap()));
 }
