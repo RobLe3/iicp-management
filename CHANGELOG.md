@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0 — 2026-08-25 developer preview
+
+- Add bounded candidate-evidence and resolution-inspection contracts.
+- Classify candidates as eligible, ineligible or unresolved without ranking, selection, dispatch or mutation.
+- Extend `show routing` and shell completion with candidate-aware inspection while retaining the 0.5 facts-based projection.
+- Add portable Rust/Python classification fixtures, schema validation and operator examples.
+
 ## 0.5.0 — 2026-08-25 developer preview
 
 - Expose application-policy briefs and dynamic, evidence-bound routing summaries through the operator CLI.

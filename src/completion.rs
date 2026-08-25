@@ -40,7 +40,20 @@ pub fn candidates(tokens: &[String]) -> Vec<&'static str> {
         .filter(|v| !v.is_empty() && !v.starts_with('-'))
         .collect::<Vec<_>>();
     let choices: &[&str] = if partial.starts_with('-') {
-        &["--help", "--json", "--version"]
+        match tokens.first().map(String::as_str) {
+            Some("show") if tokens.get(1).map(String::as_str) == Some("routing") => &[
+                "--binding",
+                "--brief",
+                "--candidates",
+                "--facts",
+                "--preference",
+                "--workspace",
+            ],
+            Some("show") if tokens.get(1).map(String::as_str) == Some("application") => {
+                &["--binding", "--facts", "--workspace"]
+            }
+            _ => &["--help", "--json", "--version"],
+        }
     } else {
         match path.as_slice() {
             [] => COMMANDS,

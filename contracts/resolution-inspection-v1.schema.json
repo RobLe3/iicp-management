@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/contracts/resolution-inspection-v1.schema.json",
+  "title": "IICP Management Candidate Evidence and Resolution Inspection v1",
+  "oneOf": [
+    {"$ref": "#/$defs/snapshot"},
+    {"$ref": "#/$defs/inspection"}
+  ],
+  "$defs": {
+    "id": {"type": "string", "minLength": 1},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_id", "compatibility", "facts"],
+      "properties": {
+        "candidate_id": {"$ref": "#/$defs/id"},
+        "compatibility": {"enum": ["compatible", "incompatible", "unknown"]},
+        "facts": {"type": "object"}
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "snapshot_id", "evidence_source", "observed_at", "expires_at", "authorizes_mutation", "candidates"],
+      "properties": {
+        "schema_version": {"const": "iicp.management-candidate-evidence.v1"},
+        "snapshot_id": {"$ref": "#/$defs/id"},
+        "evidence_source": {"$ref": "#/$defs/id"},
+        "observed_at": {"type": "integer", "minimum": 0},
+        "expires_at": {"type": "integer", "minimum": 0},
+        "authorizes_mutation": {"const": false},
+        "candidates": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/candidate"}}
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidate_id", "compatibility", "decision", "eligibility", "reason_codes", "determining_policy_ids", "fact_snapshot_digest"],
+      "properties": {
+        "candidate_id": {"$ref": "#/$defs/id"},
+        "compatibility": {"enum": ["compatible", "incompatible", "unknown"]},
+        "decision": {"enum": ["allow", "deny", "indeterminate"]},
+        "eligibility": {"enum": ["eligible", "ineligible", "unresolved"]},
+        "reason_codes": {"type": "array", "items": {"type": "string"}},
+        "determining_policy_ids": {"type": "array", "items": {"$ref": "#/$defs/id"}},
+        "fact_snapshot_digest": {"$ref": "#/$defs/digest"}
+      }
+    },
+    "inspection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "application_id", "binding_id", "intent", "evidence_source", "evidence_snapshot_digest", "evidence_expired", "authorizes_mutation", "ranking_applied", "eligible", "ineligible", "unresolved", "entries"],
+      "properties": {
+        "schema_version": {"const": "iicp.management-resolution-inspection.v1"},
+        "application_id": {"$ref": "#/$defs/id"},
+        "binding_id": {"$ref": "#/$defs/id"},
+        "intent": {"$ref": "#/$defs/id"},
+        "evidence_source": {"$ref": "#/$defs/id"},
+        "evidence_snapshot_digest": {"$ref": "#/$defs/digest"},
+        "evidence_expired": {"type": "boolean"},
+        "authorizes_mutation": {"const": false},
+        "ranking_applied": {"const": false},
+        "eligible": {"type": "integer", "minimum": 0},
+        "ineligible": {"type": "integer", "minimum": 0},
+        "unresolved": {"type": "integer", "minimum": 0},
+        "entries": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/entry"}}
+      }
+    }
+  }
+}

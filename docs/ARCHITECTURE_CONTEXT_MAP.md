@@ -10,6 +10,7 @@ administrator, or product-specific operator experiences.
 | --- | --- | --- |
 | Policy administration | Stored revisions, policy sets, application bindings, validation, simulation and generation-bound activation | Runtime eligibility decisions or protocol routing |
 | Policy evaluation | Deterministic effective-policy evaluation, deny precedence and stable reason codes | Administrative approval or provider ranking |
+| Inventory and resolution inspection | Content-minimized candidate evidence, freshness, compatibility and policy eligibility projections | Identity, trust, ranking, provider selection or execution |
 | Domain-local authority | Authentication, authorization and acceptance of an exact plan within one domain | Authority over another domain or federation-wide superuser rights |
 | Application binding | The association between an application attachment and one or more policy revisions | Upstream application behavior |
 | Request connector | Translation of an upstream request into bounded IICP request and policy context | Policy definition or authority expansion |

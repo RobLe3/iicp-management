@@ -80,6 +80,23 @@ The artifact carries no raw target state and cannot authorize mutation. A
 successful observation without an adapter receipt is not convergence. The Rust
 and standard-library Python validators consume the same seven cases.
 
+## Candidate-resolution inspection profile
+
+The resolution-inspection pack binds the small, implementation-neutral
+classification that combines a policy decision, candidate compatibility and
+evidence freshness:
+
+```bash
+cargo test --locked --test resolution_inspection
+python3 tools/run_resolution_inspection_conformance.py \
+  fixtures/resolution-inspection-conformance-v1.json
+```
+
+Eligible candidates are not ranked or selected. Stale evidence and unknown
+compatibility remain unresolved, and the resulting projection carries no
+mutation authority. Passing the fixture does not authenticate the evidence
+source, authorize dispatch or prove that any provider is reachable.
+
 ## Direct-controller profile compatibility
 
 The management-profile pack covers exact compatibility, unsupported

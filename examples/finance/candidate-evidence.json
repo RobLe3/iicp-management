@@ -1,0 +1,13 @@
+{
+  "schema_version": "iicp.management-candidate-evidence.v1",
+  "snapshot_id": "snapshot:finance:example",
+  "evidence_source": "project-fixture",
+  "observed_at": 0,
+  "expires_at": 4102444800,
+  "authorizes_mutation": false,
+  "candidates": [
+    {"candidate_id":"candidate:eu-compatible","compatibility":"compatible","facts":{"member":true,"region":"EU"}},
+    {"candidate_id":"candidate:us-compatible","compatibility":"compatible","facts":{"member":true,"region":"US"}},
+    {"candidate_id":"candidate:eu-unknown","compatibility":"unknown","facts":{"member":true,"region":"EU"}}
+  ]
+}
