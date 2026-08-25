@@ -14,6 +14,29 @@ For a bounded five-minute evaluation, packaged-crate rules and the offline
 bundle procedure, see the
 [`0.2 developer-preview installation guide`](docs/DEVELOPER_PREVIEW_INSTALLATION.md).
 
+## Why this foundation exists
+
+An administrator should be able to describe an operational requirement in
+plain terms: keep confidential finance work in the EU, prefer approved local
+capacity, permit a trusted federation fallback and record why each decision
+was made. The management layer should translate that requirement into typed,
+reviewable state without requiring the administrator to configure protocol
+internals or bind the application permanently to one model or provider.
+
+The following future workflow concept shows how an SAP CAP application could
+be attached to that environment. It follows policy composition and validation,
+effective-policy inspection, provider selection and receipt reporting. These
+steps are intended to use the same public management contracts as CLI, API and
+automation clients, while the domain-local controller retains final authority.
+
+[![Terminal view showing an effective finance policy and its eligible, fallback and denied execution paths](https://raw.githubusercontent.com/RobLe3/iicp-management/f522cfdd5b17ebdb6a9652b7d7842437d6bef57c/media/showcases/iicp-management-sap-cap-future-workflow-poster.jpg)](https://raw.githubusercontent.com/RobLe3/iicp-management/f522cfdd5b17ebdb6a9652b7d7842437d6bef57c/media/showcases/iicp-management-sap-cap-future-workflow.mp4)
+
+*Select the image to open the 2 minute 17 second video. The recording is a
+design concept, not a released SAP connector, production deployment or stable
+command interface. `IIOS` is a provisional user-experience name for the IICP
+Management Environment. SAP is an illustrative integration and no endorsement,
+certification or protocol dependency is implied.*
+
 ## State model
 
 The contracts keep four states distinct:
