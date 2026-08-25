@@ -32,7 +32,7 @@ pub enum RetryDisposition {
     ManualReviewRequired,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ApplyLifecycleReceiptV1 {
     pub schema_version: String,

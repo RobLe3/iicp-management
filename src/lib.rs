@@ -14,6 +14,7 @@ pub mod ipc;
 pub mod policy_lifecycle;
 pub mod progressive_authority;
 pub mod recovery;
+pub mod rollout;
 pub mod templates;
 
 pub const CONTRACT_VERSION: &str = "1";
