@@ -116,6 +116,19 @@ def artifacts_ready(root: Path, version: str) -> bool:
     return all(path.is_file() for path in artifact_paths(root, version))
 
 
+def cargo_credentials_available(env: dict[str, str], home: Path) -> bool:
+    if env.get("CARGO_REGISTRY_TOKEN"):
+        return True
+    cargo_home = Path(env.get("CARGO_HOME", home / ".cargo"))
+    for path in (cargo_home / "credentials.toml", cargo_home / "credentials"):
+        if not path.is_file():
+            continue
+        if path.stat().st_mode & 0o077:
+            raise ReleaseError("CARGO_CREDENTIAL_PERMISSIONS_UNSAFE")
+        return True
+    return False
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -258,8 +271,8 @@ def execute(root: Path, confirmation: str) -> None:
         return
 
     if "readiness" in actions:
-        if not os.environ.get("CARGO_REGISTRY_TOKEN"):
-            raise ReleaseError("CARGO_REGISTRY_TOKEN_REQUIRED")
+        if not cargo_credentials_available(os.environ, Path.home()):
+            raise ReleaseError("CARGO_REGISTRY_CREDENTIAL_REQUIRED")
         run([str(root / "scripts" / "release_readiness.sh")], root=root)
     crate, offline, manifest = verify_artifacts(root, head, version)
 

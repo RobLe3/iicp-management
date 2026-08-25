@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys
 import os
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -9,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from publish_release import (
     ReleaseError,
     ReleaseState,
+    cargo_credentials_available,
     execute,
     planned_actions,
     validate_remote_release,
@@ -55,9 +57,12 @@ class PublicationStateTests(unittest.TestCase):
     @patch("publish_release.crate_published", return_value=False)
     @patch("publish_release.preflight", return_value=("a" * 40, "0.1.0", False, False, False))
     def test_missing_credential_fails_before_readiness(self, _preflight, _published):
-        with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaisesRegex(ReleaseError, "CARGO_REGISTRY_TOKEN_REQUIRED"):
-                execute(Path("."), "0.1.0")
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict(os.environ, {"HOME": directory}, clear=True), patch(
+                "publish_release.Path.home", return_value=Path(directory)
+            ):
+                with self.assertRaisesRegex(ReleaseError, "CARGO_REGISTRY_CREDENTIAL_REQUIRED"):
+                    execute(Path("."), "0.1.0")
 
     @patch("publish_release.preflight", return_value=("a" * 40, "0.1.0", False, False, False))
     def test_confirmation_must_match_exact_version(self, _preflight):
@@ -68,7 +73,20 @@ class PublicationStateTests(unittest.TestCase):
         text = Path("scripts/publish_release.py").read_text()
         self.assertIn('["cargo", "publish", "--locked"]', text)
         self.assertNotIn('"--token"', text)
-        self.assertIn("CARGO_REGISTRY_TOKEN_REQUIRED", text)
+        self.assertIn("CARGO_REGISTRY_CREDENTIAL_REQUIRED", text)
+
+    def test_owner_only_cargo_login_file_is_accepted_without_reading_it(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory)
+            cargo_home = home / ".cargo"
+            cargo_home.mkdir()
+            credentials = cargo_home / "credentials.toml"
+            credentials.write_text("secret material is never parsed by this test")
+            credentials.chmod(0o600)
+            self.assertTrue(cargo_credentials_available({}, home))
+            credentials.chmod(0o644)
+            with self.assertRaisesRegex(ReleaseError, "CARGO_CREDENTIAL_PERMISSIONS_UNSAFE"):
+                cargo_credentials_available({}, home)
 
     @patch("publish_release.registry_checksum", return_value="b" * 64)
     @patch("publish_release.sha256", return_value="sha256:" + "a" * 64)
