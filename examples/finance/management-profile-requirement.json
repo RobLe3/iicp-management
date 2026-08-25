@@ -1,0 +1,13 @@
+{
+  "schema_version": "iicp.management-profile-requirement.v1",
+  "controller_id": "controller:finance-local",
+  "administrative_domain": "domain:finance",
+  "api_versions": ["management-local-ipc/v1"],
+  "schema_ids": ["iicp.management-apply-gate.v1"],
+  "canonicalization": ["RFC8785-JCS"],
+  "signature_algorithms": ["Ed25519"],
+  "operations": ["apply", "verify"],
+  "resource_kinds": ["runtime-config-v1"],
+  "policy_evaluators": ["iicp.management-policy.typed-v0"],
+  "extensions": []
+}

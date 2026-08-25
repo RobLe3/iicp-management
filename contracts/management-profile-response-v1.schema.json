@@ -1,0 +1,14 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://iicp.network/schemas/management/management-profile-response-v1.schema.json",
+  "title":"IICP Local Management Profile Response v1",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","profile","profile_digest","source","authorizes_mutation"],
+  "properties":{
+    "schema_version":{"const":"iicp.management-profile-response.v1"},
+    "profile":{"$ref":"management-profile-v1.schema.json"},
+    "profile_digest":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+    "source":{"const":"owner_protected_local_controller"},
+    "authorizes_mutation":{"const":false}
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://iicp.network/schemas/management/management-profile-v1.schema.json",
+  "title":"IICP Direct-Controller Management Profile v1",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["schema_version","controller_id","administrative_domains","api_versions","schema_ids","canonicalization","signature_algorithms","operations","resource_kinds","policy_evaluators","limits","evidence","conformance","validity","extensions","authorizes_mutation"],
+  "properties":{
+    "schema_version":{"const":"iicp.management-profile.v1"},
+    "controller_id":{"$ref":"#/$defs/id"},
+    "administrative_domains":{"$ref":"#/$defs/nonemptyIds"},
+    "api_versions":{"$ref":"#/$defs/nonemptyIds"},
+    "schema_ids":{"$ref":"#/$defs/nonemptyIds"},
+    "canonicalization":{"$ref":"#/$defs/nonemptyIds"},
+    "signature_algorithms":{"$ref":"#/$defs/nonemptyIds"},
+    "operations":{"$ref":"#/$defs/nonemptyIds"},
+    "resource_kinds":{"$ref":"#/$defs/ids"},
+    "policy_evaluators":{"$ref":"#/$defs/nonemptyIds"},
+    "limits":{"type":"object","minProperties":1,"maxProperties":128,"additionalProperties":{"type":"integer","minimum":1,"maximum":9007199254740991}},
+    "evidence":{"$ref":"#/$defs/ids"},
+    "conformance":{"$ref":"#/$defs/ids"},
+    "validity":{"type":"object","additionalProperties":false,"required":["issued_at","not_before","expires_at","generation"],"properties":{"issued_at":{"$ref":"#/$defs/integer"},"not_before":{"$ref":"#/$defs/integer"},"expires_at":{"$ref":"#/$defs/integer"},"generation":{"type":"integer","minimum":1,"maximum":9007199254740991}}},
+    "extensions":{"type":"array","maxItems":128,"items":{"$ref":"#/$defs/extension"}},
+    "authorizes_mutation":{"const":false}
+  },
+  "$defs":{
+    "id":{"type":"string","minLength":1,"maxLength":256,"pattern":"^\\S+$"},
+    "integer":{"type":"integer","minimum":0,"maximum":9007199254740991},
+    "ids":{"type":"array","maxItems":1024,"uniqueItems":true,"items":{"$ref":"#/$defs/id"}},
+    "nonemptyIds":{"type":"array","minItems":1,"maxItems":1024,"uniqueItems":true,"items":{"$ref":"#/$defs/id"}},
+    "extension":{"type":"object","additionalProperties":false,"required":["id","class"],"properties":{"id":{"$ref":"#/$defs/id"},"class":{"enum":["OPTIONAL_IGNORABLE","OPTIONAL_NEGOTIABLE","REQUIRED_UNDERSTOOD","REQUIRED_SECURITY_CRITICAL"]}}}
+  }
+}

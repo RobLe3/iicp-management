@@ -8,6 +8,10 @@ use iicp_management_core::controller::{DecisionState, PlanSubmissionReceiptV1};
 use iicp_management_core::execution::{
     execute_authorized, ApplyLifecycleReceiptV1, LocalApplyExecutionV1,
 };
+use iicp_management_core::profile::{
+    profile_digest, ManagementProfileQueryV1, ManagementProfileResponseV1,
+    MANAGEMENT_PROFILE_QUERY_SCHEMA, MANAGEMENT_PROFILE_RESPONSE_SCHEMA,
+};
 use iicp_management_core::recovery::{
     execute_recovery_request, LocalRecoveryExecutionV1, LocalRecoveryGateV1,
 };
@@ -53,6 +57,7 @@ fn open(db: &Path, key: &Path, audience: String, domain: String) -> Result<Contr
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum WireRequest {
+    Profile(ManagementProfileQueryV1),
     RecoveryExecute(Box<LocalRecoveryExecutionV1>),
     Recovery(Box<LocalRecoveryGateV1>),
     Execute(Box<LocalApplyExecutionV1>),
@@ -63,6 +68,27 @@ enum WireRequest {
 
 fn process(controller: &mut Controller, host: &mut Option<AdapterHost>, line: &str) -> String {
     match serde_json::from_str::<WireRequest>(line) {
+        Ok(WireRequest::Profile(query)) => {
+            if query.schema_version != MANAGEMENT_PROFILE_QUERY_SCHEMA {
+                return serde_json::json!({"decision":"rejected","reason":"PROFILE_QUERY_INVALID"}).to_string();
+            }
+            let resource_kinds = host
+                .as_ref()
+                .map(AdapterHost::registered_capabilities)
+                .unwrap_or_default();
+            let profile = controller.management_profile(resource_kinds, Controller::now());
+            match profile_digest(&profile, Controller::now()) {
+                Ok(profile_digest) => serde_json::to_string(&ManagementProfileResponseV1 {
+                    schema_version: MANAGEMENT_PROFILE_RESPONSE_SCHEMA.into(),
+                    profile,
+                    profile_digest,
+                    source: "owner_protected_local_controller".into(),
+                    authorizes_mutation: false,
+                })
+                .unwrap(),
+                Err(reason) => serde_json::json!({"decision":"rejected","reason":reason}).to_string(),
+            }
+        }
         Ok(WireRequest::RecoveryExecute(execution)) => match host.as_mut() {
             Some(host) => match execute_recovery_request(controller, host, &execution, Controller::now()) {
                 Ok(receipt) => serde_json::to_string(&receipt).unwrap(),
@@ -176,6 +202,7 @@ fn serve(
     }
     Ok(())
 }
+
 #[cfg(not(unix))]
 #[cfg(not(windows))]
 fn serve(_: Controller, _: Option<AdapterHost>, _: &Path) -> Result<(), String> {
@@ -542,5 +569,53 @@ fn main() {
     if let Err(e) = serve(c, host, Path::new(&a[2])) {
         eprintln!("{e}");
         std::process::exit(1)
+    }
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+    use ed25519_dalek::SigningKey;
+    use iicp_management_core::profile::ManagementProfileResponseV1;
+
+    fn open_test(path: &Path) -> Controller {
+        let key = SigningKey::from_bytes(&[41; 32]);
+        Controller::open(
+            path,
+            ControllerPolicy {
+                audience: "controller:test".into(),
+                domain: "domain:test".into(),
+                allowed_actions: BTreeSet::from(["apply".into(), "observe".into()]),
+                revocation_checkpoint: Controller::now(),
+                max_checkpoint_age: 3600,
+                high_impact_actions: BTreeSet::from(["apply".into()]),
+                max_decision_events: 100,
+            },
+            key.verifying_key().to_bytes(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn profile_query_is_read_only_and_stable_across_restart() {
+        let directory = tempfile::tempdir().unwrap();
+        let database = directory.path().join("controller.db");
+        let request = serde_json::to_string(&ManagementProfileQueryV1 {
+            schema_version: MANAGEMENT_PROFILE_QUERY_SCHEMA.into(),
+        })
+        .unwrap();
+        let mut first_controller = open_test(&database);
+        let first: ManagementProfileResponseV1 =
+            serde_json::from_str(&process(&mut first_controller, &mut None, &request)).unwrap();
+        assert_eq!(first_controller.generation().unwrap(), 0);
+        drop(first_controller);
+
+        let mut restarted = open_test(&database);
+        let second: ManagementProfileResponseV1 =
+            serde_json::from_str(&process(&mut restarted, &mut None, &request)).unwrap();
+        assert_eq!(restarted.generation().unwrap(), 0);
+        assert_eq!(first.profile_digest, second.profile_digest);
+        assert!(!second.authorizes_mutation);
+        assert_eq!(second.source, "owner_protected_local_controller");
     }
 }

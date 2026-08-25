@@ -86,6 +86,91 @@ fn required_unknown_and_changed_receipt_fail_closed() {
 }
 
 #[test]
+fn profile_cli_verifies_and_intersects_the_finance_example() {
+    let verify = cli()
+        .args([
+            "--json",
+            "profile",
+            "verify",
+            &example("management-profile.json"),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        verify.status.success(),
+        "{}",
+        String::from_utf8_lossy(&verify.stderr)
+    );
+    let value: Value = serde_json::from_slice(&verify.stdout).unwrap();
+    assert_eq!(value["valid"], true);
+    assert_eq!(value["authorizes_mutation"], false);
+
+    let intersection = cli()
+        .args([
+            "--json",
+            "profile",
+            "intersect",
+            &example("management-profile.json"),
+            &example("management-profile-requirement.json"),
+        ])
+        .output()
+        .unwrap();
+    assert!(intersection.status.success());
+    let value: Value = serde_json::from_slice(&intersection.stdout).unwrap();
+    assert_eq!(value["compatibility"], "compatible");
+    assert_eq!(value["authorizes_mutation"], false);
+}
+
+#[test]
+fn doctor_reports_profile_compatibility_without_authority() {
+    let directory = tempfile::tempdir().unwrap();
+    let assessment = directory.path().join("assessment.json");
+    let invalid_adapter = directory.path().join("adapter.json");
+    let missing_controller = directory.path().join("missing.db");
+    let now = Controller::now();
+    fs::write(
+        &assessment,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schema_version":"iicp.management-bootstrap-assessment.v1",
+            "assessment_id":"assessment:profile-doctor",
+            "environment_mode":"local_only",
+            "observed_at":now,
+            "expires_at":now+60,
+            "readiness":"ready_for_proposal",
+            "authorizes_mutation":false,
+            "observations":[],
+            "recommendations":[],
+            "required_decisions":[]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    fs::write(&invalid_adapter, b"{}").unwrap();
+    let output = cli()
+        .args([
+            "--json",
+            "doctor",
+            assessment.to_str().unwrap(),
+            missing_controller.to_str().unwrap(),
+            invalid_adapter.to_str().unwrap(),
+            &example("management-profile.json"),
+            &example("management-profile-requirement.json"),
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let value: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let check = value["checks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["check_id"] == "management_profile")
+        .unwrap();
+    assert_eq!(check["state"], "PASS");
+    assert_eq!(value["authorizes_mutation"], false);
+}
+
+#[test]
 fn controller_inspection_is_read_only() {
     let directory = tempfile::tempdir().unwrap();
     let database = directory.path().join("controller.db");

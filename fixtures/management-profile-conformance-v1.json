@@ -1,0 +1,552 @@
+{
+  "cases": [
+    {
+      "expected": {
+        "reasons": [],
+        "result": "compatible"
+      },
+      "id": "MP1-COMPATIBLE",
+      "now": 1000,
+      "profile": {
+        "administrative_domains": [
+          "domain:finance"
+        ],
+        "api_versions": [
+          "management-local-ipc/v1"
+        ],
+        "authorizes_mutation": false,
+        "canonicalization": [
+          "RFC8785-JCS"
+        ],
+        "conformance": [
+          "management-portable-conformance-v1"
+        ],
+        "controller_id": "controller:finance-local",
+        "evidence": [
+          "adapter-receipt-v1",
+          "controller-authorization-receipt-v1",
+          "verification-receipt-v1"
+        ],
+        "extensions": [],
+        "limits": {
+          "max_document_bytes": 1048576,
+          "max_operations": 1000,
+          "max_targets": 1000
+        },
+        "operations": [
+          "apply",
+          "observe",
+          "verify"
+        ],
+        "policy_evaluators": [
+          "iicp.management-policy.typed-v0"
+        ],
+        "resource_kinds": [
+          "runtime-config-v1"
+        ],
+        "schema_ids": [
+          "iicp.management-apply-gate.v1",
+          "iicp.management-plan-submission.v1"
+        ],
+        "schema_version": "iicp.management-profile.v1",
+        "signature_algorithms": [
+          "Ed25519"
+        ],
+        "validity": {
+          "expires_at": 4102444800,
+          "generation": 1,
+          "issued_at": 0,
+          "not_before": 0
+        }
+      },
+      "requirement": {
+        "administrative_domain": "domain:finance",
+        "api_versions": [
+          "management-local-ipc/v1"
+        ],
+        "canonicalization": [
+          "RFC8785-JCS"
+        ],
+        "controller_id": "controller:finance-local",
+        "extensions": [],
+        "operations": [
+          "apply",
+          "verify"
+        ],
+        "policy_evaluators": [
+          "iicp.management-policy.typed-v0"
+        ],
+        "resource_kinds": [
+          "runtime-config-v1"
+        ],
+        "schema_ids": [
+          "iicp.management-apply-gate.v1"
+        ],
+        "schema_version": "iicp.management-profile-requirement.v1",
+        "signature_algorithms": [
+          "Ed25519"
+        ]
+      }
+    },
+    {
+      "expected": {
+        "reasons": [
+          "PROFILE_REQUIRED_OPERATION_UNSUPPORTED:delete-domain"
+        ],
+        "result": "incompatible"
+      },
+      "id": "MP1-OPERATION-UNSUPPORTED",
+      "now": 1000,
+      "profile": {
+        "administrative_domains": [
+          "domain:finance"
+        ],
+        "api_versions": [
+          "management-local-ipc/v1"
+        ],
+        "authorizes_mutation": false,
+        "canonicalization": [
+          "RFC8785-JCS"
+        ],
+        "conformance": [
+          "management-portable-conformance-v1"
+        ],
+        "controller_id": "controller:finance-local",
+        "evidence": [
+          "adapter-receipt-v1",
+          "controller-authorization-receipt-v1",
+          "verification-receipt-v1"
+        ],
+        "extensions": [],
+        "limits": {
+          "max_document_bytes": 1048576,
+          "max_operations": 1000,
+          "max_targets": 1000
+        },
+        "operations": [
+          "apply",
+          "observe",
+          "verify"
+        ],
+        "policy_evaluators": [
+          "iicp.management-policy.typed-v0"
+        ],
+        "resource_kinds": [
+          "runtime-config-v1"
+        ],
+        "schema_ids": [
+          "iicp.management-apply-gate.v1",
+          "iicp.management-plan-submission.v1"
+        ],
+        "schema_version": "iicp.management-profile.v1",
+        "signature_algorithms": [
+          "Ed25519"
+        ],
+        "validity": {
+          "expires_at": 4102444800,
+          "generation": 1,
+          "issued_at": 0,
+          "not_before": 0
+        }
+      },
+      "requirement": {
+        "administrative_domain": "domain:finance",
+        "api_versions": [
+          "management-local-ipc/v1"
+        ],
+        "canonicalization": [
+          "RFC8785-JCS"
+        ],
+        "controller_id": "controller:finance-local",
+        "extensions": [],
+        "operations": [
+          "apply",
+          "verify",
+          "delete-domain"
+        ],
+        "policy_evaluators": [
+          "iicp.management-policy.typed-v0"
+        ],
+        "resource_kinds": [
+          "runtime-config-v1"
+        ],
+        "schema_ids": [
+          "iicp.management-apply-gate.v1"
+        ],
+        "schema_version": "iicp.management-profile-requirement.v1",
+        "signature_algorithms": [
+          "Ed25519"
+        ]
+      }
+    },
+    {
+      "expected": {
+        "reasons": [
+          "PROFILE_REQUIRED_EXTENSION_UNSUPPORTED:extension:future-security"
+        ],
+        "result": "incompatible"
+      },
+      "id": "MP1-SECURITY-EXTENSION-UNSUPPORTED",
+      "now": 1000,
+      "profile": {
+        "administrative_domains": [
+          "domain:finance"
+        ],
+        "api_versions": [
+          "management-local-ipc/v1"
+        ],
+        "authorizes_mutation": false,
+        "canonicalization": [
+          "RFC8785-JCS"
+        ],
+        "conformance": [
+          "management-portable-conformance-v1"
+        ],
+        "controller_id": "controller:finance-local",
+        "evidence": [
+          "adapter-receipt-v1",
+          "controller-authorization-receipt-v1",
+          "verification-receipt-v1"
+        ],
+        "extensions": [],
+        "limits": {
+          "max_document_bytes": 1048576,
+          "max_operations": 1000,
+          "max_targets": 1000
+        },
+        "operations": [
+          "apply",
+          "observe",
+          "verify"
+        ],
+        "policy_evaluators": [
+          "iicp.management-policy.typed-v0"
+        ],
+        "resource_kinds": [
+          "runtime-config-v1"
+        ],
+        "schema_ids": [
+          "iicp.management-apply-gate.v1",
+          "iicp.management-plan-submission.v1"
+        ],
+        "schema_version": "iicp.management-profile.v1",
+        "signature_algorithms": [
+          "Ed25519"
+        ],
+        "validity": {
+          "expires_at": 4102444800,
+          "generation": 1,
+          "issued_at": 0,
+          "not_before": 0
+        }
+      },
+      "requirement": {
+        "administrative_domain": "domain:finance",
+        "api_versions": [
+          "management-local-ipc/v1"
+        ],
+        "canonicalization": [
+          "RFC8785-JCS"
+        ],
+        "controller_id": "controller:finance-local",
+        "extensions": [
+          {
+            "class": "REQUIRED_SECURITY_CRITICAL",
+            "id": "extension:future-security"
+          }
+        ],
+        "operations": [
+          "apply",
+          "verify"
+        ],
+        "policy_evaluators": [
+          "iicp.management-policy.typed-v0"
+        ],
+        "resource_kinds": [
+          "runtime-config-v1"
+        ],
+        "schema_ids": [
+          "iicp.management-apply-gate.v1"
+        ],
+        "schema_version": "iicp.management-profile-requirement.v1",
+        "signature_algorithms": [
+          "Ed25519"
+        ]
+      }
+    },
+    {
+      "expected": {
+        "reasons": [
+          "MANAGEMENT_PROFILE_INVALID"
+        ],
+        "result": "reject"
+      },
+      "id": "MP1-EXPIRED",
+      "now": 1000,
+      "profile": {
+        "administrative_domains": [
+          "domain:finance"
+        ],
+        "api_versions": [
+          "management-local-ipc/v1"
+        ],
+        "authorizes_mutation": false,
+        "canonicalization": [
+          "RFC8785-JCS"
+        ],
+        "conformance": [
+          "management-portable-conformance-v1"
+        ],
+        "controller_id": "controller:finance-local",
+        "evidence": [
+          "adapter-receipt-v1",
+          "controller-authorization-receipt-v1",
+          "verification-receipt-v1"
+        ],
+        "extensions": [],
+        "limits": {
+          "max_document_bytes": 1048576,
+          "max_operations": 1000,
+          "max_targets": 1000
+        },
+        "operations": [
+          "apply",
+          "observe",
+          "verify"
+        ],
+        "policy_evaluators": [
+          "iicp.management-policy.typed-v0"
+        ],
+        "resource_kinds": [
+          "runtime-config-v1"
+        ],
+        "schema_ids": [
+          "iicp.management-apply-gate.v1",
+          "iicp.management-plan-submission.v1"
+        ],
+        "schema_version": "iicp.management-profile.v1",
+        "signature_algorithms": [
+          "Ed25519"
+        ],
+        "validity": {
+          "expires_at": 999,
+          "generation": 1,
+          "issued_at": 0,
+          "not_before": 0
+        }
+      },
+      "requirement": {
+        "administrative_domain": "domain:finance",
+        "api_versions": [
+          "management-local-ipc/v1"
+        ],
+        "canonicalization": [
+          "RFC8785-JCS"
+        ],
+        "controller_id": "controller:finance-local",
+        "extensions": [],
+        "operations": [
+          "apply",
+          "verify"
+        ],
+        "policy_evaluators": [
+          "iicp.management-policy.typed-v0"
+        ],
+        "resource_kinds": [
+          "runtime-config-v1"
+        ],
+        "schema_ids": [
+          "iicp.management-apply-gate.v1"
+        ],
+        "schema_version": "iicp.management-profile-requirement.v1",
+        "signature_algorithms": [
+          "Ed25519"
+        ]
+      }
+    },
+    {
+      "expected": {
+        "reasons": [
+          "MANAGEMENT_PROFILE_INVALID"
+        ],
+        "result": "reject"
+      },
+      "id": "MP1-DUPLICATE",
+      "now": 1000,
+      "profile": {
+        "administrative_domains": [
+          "domain:finance"
+        ],
+        "api_versions": [
+          "management-local-ipc/v1"
+        ],
+        "authorizes_mutation": false,
+        "canonicalization": [
+          "RFC8785-JCS"
+        ],
+        "conformance": [
+          "management-portable-conformance-v1"
+        ],
+        "controller_id": "controller:finance-local",
+        "evidence": [
+          "adapter-receipt-v1",
+          "controller-authorization-receipt-v1",
+          "verification-receipt-v1"
+        ],
+        "extensions": [],
+        "limits": {
+          "max_document_bytes": 1048576,
+          "max_operations": 1000,
+          "max_targets": 1000
+        },
+        "operations": [
+          "apply",
+          "observe",
+          "verify",
+          "apply"
+        ],
+        "policy_evaluators": [
+          "iicp.management-policy.typed-v0"
+        ],
+        "resource_kinds": [
+          "runtime-config-v1"
+        ],
+        "schema_ids": [
+          "iicp.management-apply-gate.v1",
+          "iicp.management-plan-submission.v1"
+        ],
+        "schema_version": "iicp.management-profile.v1",
+        "signature_algorithms": [
+          "Ed25519"
+        ],
+        "validity": {
+          "expires_at": 4102444800,
+          "generation": 1,
+          "issued_at": 0,
+          "not_before": 0
+        }
+      },
+      "requirement": {
+        "administrative_domain": "domain:finance",
+        "api_versions": [
+          "management-local-ipc/v1"
+        ],
+        "canonicalization": [
+          "RFC8785-JCS"
+        ],
+        "controller_id": "controller:finance-local",
+        "extensions": [],
+        "operations": [
+          "apply",
+          "verify"
+        ],
+        "policy_evaluators": [
+          "iicp.management-policy.typed-v0"
+        ],
+        "resource_kinds": [
+          "runtime-config-v1"
+        ],
+        "schema_ids": [
+          "iicp.management-apply-gate.v1"
+        ],
+        "schema_version": "iicp.management-profile-requirement.v1",
+        "signature_algorithms": [
+          "Ed25519"
+        ]
+      }
+    },
+    {
+      "expected": {
+        "reasons": [
+          "PROFILE_DOMAIN_UNSUPPORTED"
+        ],
+        "result": "incompatible"
+      },
+      "id": "MP1-DOMAIN-UNSUPPORTED",
+      "now": 1000,
+      "profile": {
+        "administrative_domains": [
+          "domain:finance"
+        ],
+        "api_versions": [
+          "management-local-ipc/v1"
+        ],
+        "authorizes_mutation": false,
+        "canonicalization": [
+          "RFC8785-JCS"
+        ],
+        "conformance": [
+          "management-portable-conformance-v1"
+        ],
+        "controller_id": "controller:finance-local",
+        "evidence": [
+          "adapter-receipt-v1",
+          "controller-authorization-receipt-v1",
+          "verification-receipt-v1"
+        ],
+        "extensions": [],
+        "limits": {
+          "max_document_bytes": 1048576,
+          "max_operations": 1000,
+          "max_targets": 1000
+        },
+        "operations": [
+          "apply",
+          "observe",
+          "verify"
+        ],
+        "policy_evaluators": [
+          "iicp.management-policy.typed-v0"
+        ],
+        "resource_kinds": [
+          "runtime-config-v1"
+        ],
+        "schema_ids": [
+          "iicp.management-apply-gate.v1",
+          "iicp.management-plan-submission.v1"
+        ],
+        "schema_version": "iicp.management-profile.v1",
+        "signature_algorithms": [
+          "Ed25519"
+        ],
+        "validity": {
+          "expires_at": 4102444800,
+          "generation": 1,
+          "issued_at": 0,
+          "not_before": 0
+        }
+      },
+      "requirement": {
+        "administrative_domain": "domain:other",
+        "api_versions": [
+          "management-local-ipc/v1"
+        ],
+        "canonicalization": [
+          "RFC8785-JCS"
+        ],
+        "controller_id": "controller:finance-local",
+        "extensions": [],
+        "operations": [
+          "apply",
+          "verify"
+        ],
+        "policy_evaluators": [
+          "iicp.management-policy.typed-v0"
+        ],
+        "resource_kinds": [
+          "runtime-config-v1"
+        ],
+        "schema_ids": [
+          "iicp.management-apply-gate.v1"
+        ],
+        "schema_version": "iicp.management-profile-requirement.v1",
+        "signature_algorithms": [
+          "Ed25519"
+        ]
+      }
+    }
+  ],
+  "evidence_class": "project-verified",
+  "schema": "iicp.management-profile.cases.v1",
+  "version": "1"
+}

@@ -54,6 +54,18 @@ cargo run --locked --bin iicp-management -- verify-receipt \
   examples/finance/receipt-tampered.json examples/finance/plan.json domain:finance
 ```
 
+The example also includes a direct-controller profile and a caller requirement.
+Their intersection proves contract compatibility without authorizing a plan:
+
+```bash
+cargo run --locked --bin iicp-management -- profile verify \
+  examples/finance/management-profile.json
+
+cargo run --locked --bin iicp-management -- profile intersect \
+  examples/finance/management-profile.json \
+  examples/finance/management-profile-requirement.json
+```
+
 Use `--json` immediately after the binary name for deterministic automation
 output. Human output is deliberately brief and keeps canonical identifiers and
 reason codes available without exposing protocol internals.

@@ -216,6 +216,12 @@ impl AdapterHost {
     pub fn cancel(&mut self, operation_id: &str) {
         self.cancelled.insert(operation_id.into());
     }
+    pub fn registered_capabilities(&self) -> BTreeSet<String> {
+        self.adapters
+            .keys()
+            .map(|(_, capability)| capability.clone())
+            .collect()
+    }
     pub fn inspection(&self, now: u64, lifetime: u64) -> AdapterInspectionV1 {
         let entries = self
             .adapters
