@@ -3,7 +3,7 @@
 This project follows semantic versioning for published packages. Contracts and
 fixtures retain their own explicit schema and profile generations.
 
-## 0.1.0 — unreleased developer preview
+## 0.1.0 — 2026-08-25 developer preview
 
 - Portable desired-state, planning, approval, receipt and policy contracts.
 - Deterministic typed policy lifecycle, simulation and decision explanation.
