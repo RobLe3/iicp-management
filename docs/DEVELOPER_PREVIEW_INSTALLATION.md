@@ -1,4 +1,4 @@
-# Management Foundation 0.2 developer preview
+# Management Foundation 0.4 developer preview
 
 This preview is for local evaluation of the public IICP management contracts,
 planner, controller and conformance runner. It does not install a remote
@@ -34,12 +34,12 @@ After a reviewed release is published, install the exact version with its
 published lockfile:
 
 ```bash
-cargo install iicp-management-core --version 0.3.0 --locked
+cargo install iicp-management-core --version 0.4.0 --locked
 ```
 
 Do not remove `--locked` if installation fails. A locked failure means the
 approved dependency graph could not be reproduced and should be investigated.
-The 0.2 readiness process tests the packaged `.crate`; it does not authorize
+The 0.4 readiness process tests the packaged `.crate`; it does not authorize
 publication by itself.
 
 ## Offline bundle
@@ -50,8 +50,8 @@ the packaged source and vendored dependencies. Transfer both the bundle and
 the extracted directory:
 
 ```bash
-tar -xzf iicp-management-core-0.3.0-offline.tar.gz
-cd iicp-management-core-0.3.0
+tar -xzf iicp-management-core-0.4.0-offline.tar.gz
+cd iicp-management-core-0.4.0
 CARGO_HOME="$(mktemp -d)" cargo install --offline --locked --path .
 iicp-management-conformance
 ```
@@ -60,13 +60,14 @@ The bundle is suitable for evaluation in an isolated environment. It is not a
 signed binary distribution and does not remove the need to authenticate its
 transfer source.
 
-## Untagged 0.4 candidate validation
+## Release validation
 
-The `0.4.0` worktree is an developer preview. Validate it from a clean
-reviewed checkout with `scripts/release_readiness.sh`; do not substitute an
-unlocked registry install or treat the candidate version as a published
-package. The readiness lane exercises the administrator trial workflow through
-both the packaged crate and vendored offline bundle.
+The `0.4.0` package is a published developer preview. Release preparation from
+a later clean, reviewed checkout uses `scripts/release_readiness.sh`; do not
+substitute an unlocked registry install. The readiness lane exercises the
+administrator trial workflow through both the packaged crate and vendored
+offline bundle and validates the generated release manifest against the
+packaged schema.
 
 ## Recovery and removal
 
