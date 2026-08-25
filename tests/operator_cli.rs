@@ -64,6 +64,108 @@ fn finance_workflow_is_deterministic_and_explainable() {
 }
 
 #[test]
+fn application_policy_and_dynamic_routing_are_inspectable() {
+    let application = cli()
+        .args([
+            "--json",
+            "show",
+            "application",
+            "application:finance",
+            "policy",
+            "brief",
+            "--binding",
+            "binding:finance",
+            "--workspace",
+            &example("proposed-workspace.json"),
+            "--facts",
+            &example("facts-us.json"),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        application.status.success(),
+        "{}",
+        String::from_utf8_lossy(&application.stderr)
+    );
+    let value: Value = serde_json::from_slice(&application.stdout).unwrap();
+    assert_eq!(value["application_id"], "application:finance");
+    assert_eq!(value["binding_id"], "binding:finance");
+    assert_eq!(value["effective_policy"]["decision"], "deny");
+    assert!(value["effective_policy"]["fact_snapshot_digest"]
+        .as_str()
+        .unwrap()
+        .starts_with("sha256:"));
+
+    let routing = cli()
+        .args([
+            "show",
+            "routing",
+            "urn:iicp:intent:finance:invoice-analysis:v1",
+            "--binding",
+            "binding:finance",
+            "--workspace",
+            &example("proposed-workspace.json"),
+            "--facts",
+            &example("facts-us.json"),
+            "--brief",
+            "--preference",
+            "local-eu",
+        ])
+        .output()
+        .unwrap();
+    assert!(routing.status.success());
+    let summary = String::from_utf8_lossy(&routing.stdout);
+    assert!(summary.contains("dynamic evidence-bound resolution"));
+    assert!(!summary.contains("provider"));
+    assert!(!summary.contains("next hop"));
+}
+
+#[test]
+fn inspection_rejects_application_mismatch_and_preserves_indeterminate() {
+    let mismatch = cli()
+        .args([
+            "show",
+            "application",
+            "application:other",
+            "policy",
+            "brief",
+            "--binding",
+            "binding:finance",
+            "--workspace",
+            &example("proposed-workspace.json"),
+            "--facts",
+            &example("facts-us.json"),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(mismatch.status.code(), Some(4));
+    assert!(String::from_utf8_lossy(&mismatch.stderr).contains("APPLICATION_BINDING_MISMATCH"));
+
+    let directory = tempfile::tempdir().unwrap();
+    let facts = directory.path().join("facts.json");
+    fs::write(&facts, b"{}\n").unwrap();
+    let routing = cli()
+        .args([
+            "--json",
+            "show",
+            "routing",
+            "urn:iicp:intent:finance:invoice-analysis:v1",
+            "--binding",
+            "binding:finance",
+            "--workspace",
+            &example("proposed-workspace.json"),
+            "--facts",
+            facts.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(routing.status.success());
+    let value: Value = serde_json::from_slice(&routing.stdout).unwrap();
+    assert_eq!(value["eligible"], false);
+    assert_eq!(value["decision"], "indeterminate");
+}
+
+#[test]
 fn required_unknown_and_changed_receipt_fail_closed() {
     let unknown = cli()
         .args(["validate", &example("unknown-required-extension.json")])

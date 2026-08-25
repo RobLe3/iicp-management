@@ -32,7 +32,9 @@ controller.
 ## Policy lifecycle profile
 
 The policy-lifecycle pack covers versioned policy storage, application-binding
-validation, deterministic composition, activation generations and simulation:
+validation, deterministic composition, activation generations, simulation and
+the non-authorizing application-policy and resolution projections used by the
+operator CLI:
 
 ```bash
 python3 tools/run_policy_lifecycle_conformance.py \

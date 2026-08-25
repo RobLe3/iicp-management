@@ -6,8 +6,15 @@ fn candidates_are_static() {
         (vec!["sh"], vec!["show"]),
         (
             vec!["show", ""],
-            vec!["active-policies", "effective-policy", "stored-policies"],
+            vec![
+                "active-policies",
+                "application",
+                "effective-policy",
+                "routing",
+                "stored-policies",
+            ],
         ),
+        (vec!["show", "application", "app", ""], vec!["policy"]),
         (vec!["explain", ""], vec!["decision"]),
     ] {
         let tokens = t.into_iter().map(String::from).collect::<Vec<_>>();
