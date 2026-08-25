@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -17,8 +18,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PACKAGE = "iicp-management-core"
-EXPECTED_VERSION = "0.2.0"
 REPOSITORY = "RobLe3/iicp-management"
+STABLE_VERSION = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
 
 
 class ReleaseError(RuntimeError):
@@ -70,6 +71,11 @@ def run(args: list[str], *, root: Path, capture: bool = False, env: dict[str, st
 
 def package_version(root: Path) -> str:
     return tomllib.loads((root / "Cargo.toml").read_text())["package"]["version"]
+
+
+def validate_release_version(version: str) -> None:
+    if not STABLE_VERSION.fullmatch(version):
+        raise ReleaseError("RELEASE_VERSION_INVALID")
 
 
 def registry_checksum(version: str) -> str | None:
@@ -218,8 +224,7 @@ def preflight(root: Path) -> tuple[str, str, bool, bool, bool]:
     if head != run(["git", "rev-parse", "origin/main"], root=root, capture=True):
         raise ReleaseError("RELEASE_REQUIRES_ORIGIN_MAIN")
     version = package_version(root)
-    if version != EXPECTED_VERSION:
-        raise ReleaseError("RELEASE_VERSION_UNEXPECTED")
+    validate_release_version(version)
     if not (root / "docs" / f"RELEASE_NOTES_{version}.md").is_file():
         raise ReleaseError("RELEASE_NOTES_MISSING")
     tag = f"v{version}"
