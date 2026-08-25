@@ -92,3 +92,18 @@ python3 tools/run_management_profile_conformance.py \
 
 The profile is a compatibility projection. A passing result does not establish
 controller identity, caller authorization or permission to mutate a target.
+
+
+## Diagnostic evidence profile
+
+The diagnostic pack covers complete local evidence, missing optional inputs,
+partial convergence, bundle tampering, sensitive assessment content and unknown
+security-critical extensions:
+
+```bash
+cargo test --locked --test diagnostics
+```
+
+The bundle is a content-minimized local projection. Passing the fixture does not
+authenticate its creator, establish target convergence, authorize mutation or
+constitute representative administrator evidence.

@@ -1,0 +1,12 @@
+{
+  "schema_version": "iicp.management-diagnostic-conformance.v1",
+  "evidence_class": "project-verified",
+  "cases": [
+    {"id": "DIAG-01", "scenario": "all_sources_valid", "expected": {"result": "accept", "overall": "PASS"}},
+    {"id": "DIAG-02", "scenario": "optional_sources_missing", "expected": {"result": "accept", "overall": "WARN"}},
+    {"id": "DIAG-03", "scenario": "partial_rollout", "expected": {"result": "accept", "overall": "FAIL"}},
+    {"id": "DIAG-04", "scenario": "bundle_tampered", "expected": {"result": "reject", "reason": "DIAGNOSTIC_BUNDLE_INVALID"}},
+    {"id": "DIAG-05", "scenario": "sensitive_assessment", "expected": {"result": "reject", "reason": "BOOTSTRAP_OBSERVATION_INVALID"}},
+    {"id": "DIAG-06", "scenario": "unknown_security_extension", "expected": {"result": "reject", "reason": "DIAGNOSTIC_ADAPTER_INVALID"}}
+  ]
+}

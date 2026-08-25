@@ -19,6 +19,7 @@ administrator, or product-specific operator experiences.
 | Policy templates and impact preview | Versioned template inputs, deterministic rendering and evidence-bound change projection | Independent policy semantics, activation authority, invented operational metrics or convergence claims |
 | Staged rollout coordination | Immutable target sets, canary and batch order, durable per-target lifecycle evidence, explicit retry and signed partial acceptance | Target authorization, global transactions, automatic compensation, cross-domain authority or continuous remediation |
 | Drift detection and bounded reconciliation | Fresh post-rollout observation, expected/observed comparison, review classification and non-authorizing one-shot proposals | Continuous remediation, unsafe-class automation, cross-domain authority or invented convergence |
+| Diagnostic evidence | Content-minimized local health, compatibility, freshness and convergence summaries | Raw configuration export, authenticity, mutation authority, remote telemetry or support access |
 
 ## State flow
 

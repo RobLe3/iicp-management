@@ -140,6 +140,8 @@ fn disposable_sandbox_is_machine_readable_and_non_representative() {
     assert_eq!(value["impact"]["authorizes_mutation"], false);
     assert_eq!(value["simulation"]["newly_denied"], true);
     assert_eq!(value["plan"]["operations"].as_array().unwrap().len(), 1);
+    assert_eq!(value["diagnostic_bundle"]["authorizes_mutation"], false);
+    assert_eq!(value["diagnostic_bundle"]["overall"], "WARN");
 }
 
 #[test]

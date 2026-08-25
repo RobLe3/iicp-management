@@ -26,3 +26,13 @@ These controls improve determinism and detect known dependency risk. They do
 not prove that a maintainer account, source release or build host is
 uncompromised, and the preview artifacts are not yet signed binaries. The
 manifest explicitly grants neither publication nor deployment authority.
+
+
+## Diagnostic evidence
+
+Diagnostic bundles project only allowlisted states, counts, reason codes and
+digests from validated local inputs. They exclude raw policy and desired-state
+content, request and target identifiers, prompts, responses and credentials.
+The bundle digest detects modification but does not authenticate the creator.
+Operators should still review a bundle before moving it outside its domain
+because timing, versions and aggregate operational state may be sensitive.

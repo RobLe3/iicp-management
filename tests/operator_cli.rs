@@ -264,3 +264,144 @@ fn controller_inspection_is_read_only() {
     assert_eq!(value["effective_state"], "generation_mismatch");
     assert_eq!(before, fs::read(&database).unwrap());
 }
+
+#[test]
+fn diagnostic_cli_creates_verifies_and_explains_a_private_bundle() {
+    let directory = tempfile::tempdir().unwrap();
+    let assessment = directory.path().join("assessment.json");
+    let bundle = directory.path().join("diagnostic.json");
+    let now = Controller::now();
+    fs::write(
+        &assessment,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schema_version":"iicp.management-bootstrap-assessment.v1",
+            "assessment_id":"assessment:diagnostic-cli",
+            "environment_mode":"local_only",
+            "observed_at":now,
+            "expires_at":now+300,
+            "readiness":"ready_for_proposal",
+            "authorizes_mutation":false,
+            "observations":[],
+            "recommendations":[],
+            "required_decisions":[]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let create = cli()
+        .args([
+            "--json",
+            "diagnostics",
+            "create",
+            assessment.to_str().unwrap(),
+            "--profile",
+            &example("management-profile.json"),
+            "--output",
+            bundle.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        create.status.success(),
+        "{}",
+        String::from_utf8_lossy(&create.stderr)
+    );
+    let value: Value = serde_json::from_slice(&create.stdout).unwrap();
+    assert_eq!(value["authorizes_mutation"], false);
+    assert_eq!(value["overall"], "WARN");
+    let bytes = fs::read(&bundle).unwrap();
+    for forbidden in ["prompt", "response", "credential", "private_key", "api_key"] {
+        assert!(!String::from_utf8_lossy(&bytes).contains(forbidden));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            fs::metadata(&bundle).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+
+    let verify = cli()
+        .args(["diagnostics", "verify", bundle.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(verify.status.success());
+    let show = cli()
+        .args(["diagnostics", "show", bundle.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(show.status.success());
+    let summary = String::from_utf8_lossy(&show.stdout);
+    assert!(summary.contains("Overall: Warn"));
+    assert!(summary.contains("PROVIDE_OR_REPAIR_CONTROLLER_EVIDENCE"));
+
+    let mut tampered: Value = serde_json::from_slice(&bytes).unwrap();
+    tampered["overall"] = serde_json::json!("PASS");
+    fs::write(&bundle, serde_json::to_vec_pretty(&tampered).unwrap()).unwrap();
+    let rejected = cli()
+        .args(["diagnostics", "verify", bundle.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(!rejected.status.success());
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("DIAGNOSTIC_BUNDLE_INVALID"));
+}
+
+#[test]
+fn diagnostic_collection_opens_controller_database_read_only() {
+    let directory = tempfile::tempdir().unwrap();
+    let database = directory.path().join("controller.db");
+    let assessment = directory.path().join("assessment.json");
+    let bundle = directory.path().join("diagnostic.json");
+    let key = SigningKey::from_bytes(&[31; 32]);
+    let controller = Controller::open(
+        &database,
+        ControllerPolicy {
+            audience: "controller:test".into(),
+            domain: "domain:test".into(),
+            allowed_actions: BTreeSet::from(["apply".into()]),
+            revocation_checkpoint: Controller::now(),
+            max_checkpoint_age: 3600,
+            high_impact_actions: BTreeSet::new(),
+            max_decision_events: 100,
+        },
+        key.verifying_key().to_bytes(),
+    )
+    .unwrap();
+    drop(controller);
+    let now = Controller::now();
+    fs::write(
+        &assessment,
+        serde_json::to_vec_pretty(&serde_json::json!({
+            "schema_version":"iicp.management-bootstrap-assessment.v1",
+            "assessment_id":"assessment:read-only",
+            "environment_mode":"local_only",
+            "observed_at":now,
+            "expires_at":now+300,
+            "readiness":"ready_for_proposal",
+            "authorizes_mutation":false,
+            "observations":[],"recommendations":[],"required_decisions":[]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let before = fs::read(&database).unwrap();
+    let output = cli()
+        .args([
+            "diagnostics",
+            "create",
+            assessment.to_str().unwrap(),
+            "--controller",
+            database.to_str().unwrap(),
+            "--output",
+            bundle.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(before, fs::read(&database).unwrap());
+}

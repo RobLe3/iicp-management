@@ -9,6 +9,7 @@ pub mod adapters;
 pub mod apply_gate;
 pub mod bootstrap;
 pub mod controller;
+pub mod diagnostics;
 pub mod execution;
 pub mod ipc;
 pub mod policy_lifecycle;

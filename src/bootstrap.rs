@@ -94,7 +94,7 @@ pub enum CheckState {
     NotAvailable,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct DoctorCheckV1 {
     pub check_id: String,
