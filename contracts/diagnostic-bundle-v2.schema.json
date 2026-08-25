@@ -1,0 +1,374 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/schemas/management/diagnostic-bundle-v2.schema.json",
+  "title": "IICP Management Diagnostic Bundle v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "bundle_id",
+    "evidence_class",
+    "tool_version",
+    "created_at",
+    "expires_at",
+    "authorizes_mutation",
+    "overall",
+    "artifacts",
+    "checks",
+    "safe_next_actions",
+    "payload_digest",
+    "runtime"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "iicp.management-diagnostic-bundle.v2"
+    },
+    "bundle_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "evidence_class": {
+      "const": "operator_diagnostic"
+    },
+    "tool_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "created_at": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "expires_at": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "authorizes_mutation": {
+      "const": false
+    },
+    "overall": {
+      "enum": [
+        "PASS",
+        "WARN",
+        "FAIL",
+        "NOT_AVAILABLE"
+      ]
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "items": {
+        "$ref": "#/$defs/artifact"
+      }
+    },
+    "checks": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/check"
+      }
+    },
+    "controller": {
+      "$ref": "#/$defs/controller"
+    },
+    "adapter": {
+      "$ref": "#/$defs/adapter"
+    },
+    "profile": {
+      "$ref": "#/$defs/profile"
+    },
+    "rollout": {
+      "$ref": "#/$defs/rollout"
+    },
+    "safe_next_actions": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z0-9_]+$"
+      }
+    },
+    "payload_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "runtime": {
+      "$ref": "#/$defs/runtime"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "state"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "bootstrap_assessment",
+            "controller_snapshot",
+            "adapter_inspection",
+            "management_profile",
+            "rollout_status",
+            "runtime_observation"
+          ]
+        },
+        "state": {
+          "enum": [
+            "VALID",
+            "NOT_AVAILABLE"
+          ]
+        },
+        "source_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "observed_at": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expires_at": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "check_id",
+        "state",
+        "reason_code"
+      ],
+      "properties": {
+        "check_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "state": {
+          "enum": [
+            "PASS",
+            "WARN",
+            "FAIL",
+            "NOT_AVAILABLE"
+          ]
+        },
+        "reason_code": {
+          "type": "string",
+          "pattern": "^[A-Z0-9_]+$"
+        }
+      }
+    },
+    "controller": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "generation",
+        "decision_counts",
+        "target_state",
+        "observed_state",
+        "effective_state"
+      ],
+      "properties": {
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "decision_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "target_state": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "observed_state": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "effective_state": {
+          "type": "string",
+          "maxLength": 128
+        }
+      }
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_count",
+        "converged",
+        "partial",
+        "failed",
+        "unknown",
+        "reason_codes"
+      ],
+      "properties": {
+        "target_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "converged": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "partial": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "unknown": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason_codes": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z0-9_]+$"
+          }
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_digest",
+        "compatibility",
+        "reason_codes"
+      ],
+      "properties": {
+        "profile_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "compatibility": {
+          "enum": [
+            "compatible",
+            "incompatible"
+          ]
+        },
+        "reason_codes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "rollout": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "current_batch",
+        "target_counts",
+        "partial_accepted"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "pending",
+            "running",
+            "paused",
+            "converged",
+            "partially_converged",
+            "failed"
+          ]
+        },
+        "current_batch": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "target_counts": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "partial_accepted": {
+          "type": "boolean"
+        }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "evidence_state",
+        "reported_liveness",
+        "reported_readiness",
+        "effective_state",
+        "reason_codes",
+        "subsystem_state_counts",
+        "external_connectivity_state_counts"
+      ],
+      "properties": {
+        "evidence_state": {
+          "enum": [
+            "current",
+            "stale"
+          ]
+        },
+        "reported_liveness": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "reported_readiness": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "effective_state": {
+          "enum": [
+            "ready",
+            "degraded",
+            "not_ready",
+            "unknown"
+          ]
+        },
+        "reason_codes": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "string",
+            "maxLength": 128
+          }
+        },
+        "subsystem_state_counts": {
+          "type": "object",
+          "maxProperties": 16,
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "external_connectivity_state_counts": {
+          "type": "object",
+          "maxProperties": 16,
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

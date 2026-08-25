@@ -55,6 +55,16 @@ pub fn candidates(tokens: &[String]) -> Vec<&'static str> {
             Some("show") if tokens.get(1).map(String::as_str) == Some("runtime-health") => {
                 &["--brief", "--target"]
             }
+            Some("diagnostics") if tokens.get(1).map(String::as_str) == Some("create") => &[
+                "--adapter",
+                "--controller",
+                "--output",
+                "--profile",
+                "--requirement",
+                "--rollout-status",
+                "--runtime-health",
+                "--runtime-target",
+            ],
             _ => &["--help", "--json", "--version"],
         }
     } else {
@@ -75,6 +85,7 @@ pub fn candidates(tokens: &[String]) -> Vec<&'static str> {
             ["template"] => &["list", "render", "show"],
             ["impact"] => &["preview"],
             ["bootstrap"] => &["assess", "export", "proposal"],
+            ["diagnostics"] => &["create", "show", "verify"],
             ["rollout"] => &[
                 "accept-partial",
                 "assess-drift",

@@ -1,3 +1,4 @@
+use iicp_client::runtime_health::{Liveness, Readiness, SubsystemState};
 use iicp_management_core::adapters::{AdapterInspectionEntryV1, AdapterInspectionV1};
 use iicp_management_core::bootstrap::*;
 use iicp_management_core::controller::{ControllerSnapshot, DecisionRecord, DecisionState};
@@ -7,6 +8,10 @@ use iicp_management_core::profile::{
 };
 use iicp_management_core::rollout::{
     ConvergenceStatusV1, RunState, TargetRunState, TargetRunStatusV1, ROLLOUT_SCHEMA,
+};
+use iicp_management_core::runtime_observation::{
+    RuntimeEffectiveStateV1, RuntimeEvidenceStateV1, RuntimeObservationV1, RUNTIME_HEALTH_SOURCE,
+    RUNTIME_OBSERVATION_SCHEMA,
 };
 use iicp_management_core::{ConvergenceState, ExtensionClass, ExtensionRequirement};
 use serde_json::json;
@@ -107,6 +112,115 @@ fn requirement() -> ManagementProfileRequirementV1 {
         policy_evaluators: vec![],
         extensions: vec![],
     }
+}
+
+fn runtime(state: RuntimeEffectiveStateV1) -> RuntimeObservationV1 {
+    RuntimeObservationV1 {
+        schema_version: RUNTIME_OBSERVATION_SCHEMA.into(),
+        target_id: "private-runtime-target".into(),
+        evidence_source: RUNTIME_HEALTH_SOURCE.into(),
+        source_digest: format!("sha256:{}", "d".repeat(64)),
+        observed_at: "1970-01-01T00:01:40.000Z".into(),
+        expires_at: "1970-01-01T00:03:20.000Z".into(),
+        evidence_state: RuntimeEvidenceStateV1::Current,
+        reported_lifecycle: "running".into(),
+        reported_liveness: Liveness::Live,
+        reported_readiness: match state {
+            RuntimeEffectiveStateV1::Ready => Readiness::Ready,
+            RuntimeEffectiveStateV1::Degraded => Readiness::Degraded,
+            _ => Readiness::NotReady,
+        },
+        effective_state: state,
+        reason_codes: vec![],
+        subsystems: BTreeMap::from([("provider".into(), SubsystemState::Healthy)]),
+        external_connectivity: BTreeMap::from([("directory".into(), SubsystemState::Healthy)]),
+        authorizes_mutation: false,
+    }
+}
+
+#[test]
+fn runtime_aware_bundle_is_v2_minimized_and_schema_valid() {
+    let value = create_diagnostic_bundle_v2(
+        &assessment(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        &runtime(RuntimeEffectiveStateV1::Ready),
+        150,
+    )
+    .unwrap();
+    assert_eq!(value.base.schema_version, DIAGNOSTIC_SCHEMA_V2);
+    assert_eq!(value.base.artifacts.len(), 6);
+    assert_eq!(
+        value.base.checks.last().unwrap().reason_code,
+        "RUNTIME_READY"
+    );
+    assert!(value
+        .base
+        .safe_next_actions
+        .iter()
+        .all(|v| v != "REVIEW_RUNTIME_EVIDENCE"));
+    let serialized = serde_json::to_string(&value).unwrap();
+    assert!(!serialized.contains("private-runtime-target"));
+    assert!(!serialized.contains("process_epoch"));
+    assert!(!serialized.contains("pid"));
+    let schema: serde_json::Value = serde_json::from_str(include_str!(
+        "../contracts/diagnostic-bundle-v2.schema.json"
+    ))
+    .unwrap();
+    jsonschema::validator_for(&schema)
+        .unwrap()
+        .validate(&serde_json::to_value(&value).unwrap())
+        .unwrap();
+    validate_diagnostic_bundle_v2(&value, 150).unwrap();
+}
+
+#[test]
+fn runtime_diagnostic_states_are_truthful_and_tamper_fails() {
+    for (state, expected, check) in [
+        (
+            RuntimeEffectiveStateV1::Degraded,
+            CheckState::Warn,
+            "RUNTIME_DEGRADED",
+        ),
+        (
+            RuntimeEffectiveStateV1::NotReady,
+            CheckState::Fail,
+            "RUNTIME_NOT_READY",
+        ),
+        (
+            RuntimeEffectiveStateV1::Unknown,
+            CheckState::Warn,
+            "RUNTIME_STATE_UNKNOWN",
+        ),
+    ] {
+        let value = create_diagnostic_bundle_v2(
+            &assessment(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            &runtime(state),
+            150,
+        )
+        .unwrap();
+        assert_eq!(value.base.overall, expected);
+        assert_eq!(value.base.checks.last().unwrap().reason_code, check);
+    }
+    let mut stale = runtime(RuntimeEffectiveStateV1::Unknown);
+    stale.evidence_state = RuntimeEvidenceStateV1::Stale;
+    let mut value =
+        create_diagnostic_bundle_v2(&assessment(), None, None, None, None, None, &stale, 150)
+            .unwrap();
+    assert_eq!(
+        value.base.checks.last().unwrap().reason_code,
+        "RUNTIME_EVIDENCE_STALE"
+    );
+    value.runtime.reported_readiness = "ready".into();
+    assert!(validate_diagnostic_bundle_v2(&value, 150).is_err());
 }
 
 #[test]

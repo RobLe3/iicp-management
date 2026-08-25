@@ -46,7 +46,7 @@ cargo install iicp-management-core --version 0.7.0 --locked
 
 Do not remove `--locked` if installation fails. A locked failure means the
 approved dependency graph could not be reproduced and should be investigated.
-The 0.7 readiness process tests the packaged `.crate`; it does not authorize
+The 0.7 release process tested the packaged `.crate`; it does not authorize
 publication by itself.
 
 ## Offline bundle
@@ -69,8 +69,7 @@ transfer source.
 
 ## Release validation
 
-The `0.7.0` package is a developer-preview release candidate until the guarded
-publisher verifies crates.io and the immutable release assets. Release
+The `0.7.0` developer preview is published and its crates.io package and immutable release assets were verified by the guarded publisher. Release
 preparation from a clean, reviewed checkout uses `scripts/release_readiness.sh`; do not
 substitute an unlocked registry install. The readiness lane exercises the
 administrator trial workflow through both the packaged crate and vendored

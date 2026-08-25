@@ -9,10 +9,16 @@ use crate::profile::{
     ManagementProfileV1, ProfileCompatibility,
 };
 use crate::rollout::{ConvergenceStatusV1, RunState, TargetRunState, ROLLOUT_SCHEMA};
+use crate::runtime_observation::{
+    RuntimeEffectiveStateV1, RuntimeEvidenceStateV1, RuntimeObservationV1,
+    RUNTIME_OBSERVATION_SCHEMA,
+};
+use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub const DIAGNOSTIC_SCHEMA: &str = "iicp.management-diagnostic-bundle.v1";
+pub const DIAGNOSTIC_SCHEMA_V2: &str = "iicp.management-diagnostic-bundle.v2";
 pub const DIAGNOSTIC_EVIDENCE_CLASS: &str = "operator_diagnostic";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -96,6 +102,26 @@ pub struct DiagnosticBundleV1 {
     pub rollout: Option<DiagnosticRolloutV1>,
     pub safe_next_actions: Vec<String>,
     pub payload_digest: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DiagnosticRuntimeV1 {
+    pub evidence_state: RuntimeEvidenceStateV1,
+    pub reported_liveness: String,
+    pub reported_readiness: String,
+    pub effective_state: RuntimeEffectiveStateV1,
+    pub reason_codes: Vec<String>,
+    pub subsystem_state_counts: BTreeMap<String, u64>,
+    pub external_connectivity_state_counts: BTreeMap<String, u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct DiagnosticBundleV2 {
+    #[serde(flatten)]
+    pub base: DiagnosticBundleV1,
+    pub runtime: DiagnosticRuntimeV1,
 }
 
 fn artifact<T: Serialize>(
@@ -454,6 +480,160 @@ pub fn validate_diagnostic_bundle(value: &DiagnosticBundleV1, now: u64) -> Resul
         })
         || overall(&value.checks) != value.overall
         || safe_actions(&value.checks) != value.safe_next_actions
+    {
+        return Err("DIAGNOSTIC_BUNDLE_INVALID".into());
+    }
+    Ok(())
+}
+
+fn runtime_state_counts<T: std::fmt::Debug>(
+    values: impl Iterator<Item = T>,
+) -> BTreeMap<String, u64> {
+    let mut counts = BTreeMap::new();
+    for value in values {
+        *counts
+            .entry(format!("{value:?}").to_ascii_lowercase())
+            .or_insert(0) += 1;
+    }
+    counts
+}
+
+fn runtime_summary(value: &RuntimeObservationV1) -> DiagnosticRuntimeV1 {
+    DiagnosticRuntimeV1 {
+        evidence_state: value.evidence_state.clone(),
+        reported_liveness: format!("{:?}", value.reported_liveness).to_ascii_lowercase(),
+        reported_readiness: format!("{:?}", value.reported_readiness).to_ascii_lowercase(),
+        effective_state: value.effective_state.clone(),
+        reason_codes: value.reason_codes.clone(),
+        subsystem_state_counts: runtime_state_counts(value.subsystems.values().cloned()),
+        external_connectivity_state_counts: runtime_state_counts(
+            value.external_connectivity.values().cloned(),
+        ),
+    }
+}
+
+fn runtime_check(value: &RuntimeObservationV1) -> DoctorCheckV1 {
+    let (state, reason_code) = match (&value.evidence_state, &value.effective_state) {
+        (RuntimeEvidenceStateV1::Stale, _) => (CheckState::Warn, "RUNTIME_EVIDENCE_STALE"),
+        (_, RuntimeEffectiveStateV1::Ready) => (CheckState::Pass, "RUNTIME_READY"),
+        (_, RuntimeEffectiveStateV1::Degraded) => (CheckState::Warn, "RUNTIME_DEGRADED"),
+        (_, RuntimeEffectiveStateV1::NotReady) => (CheckState::Fail, "RUNTIME_NOT_READY"),
+        (_, RuntimeEffectiveStateV1::Unknown) => (CheckState::Warn, "RUNTIME_STATE_UNKNOWN"),
+    };
+    DoctorCheckV1 {
+        check_id: "runtime_health".into(),
+        state,
+        reason_code: reason_code.into(),
+    }
+}
+
+fn runtime_action(value: &RuntimeObservationV1) -> &'static str {
+    match (&value.evidence_state, &value.effective_state) {
+        (RuntimeEvidenceStateV1::Stale, _) => "REFRESH_RUNTIME_EVIDENCE",
+        (_, RuntimeEffectiveStateV1::Degraded) => "REVIEW_RUNTIME_DEGRADATION",
+        (_, RuntimeEffectiveStateV1::NotReady) => "RESTORE_OR_REVIEW_RUNTIME",
+        (_, RuntimeEffectiveStateV1::Unknown) => "REVIEW_RUNTIME_EVIDENCE",
+        (_, RuntimeEffectiveStateV1::Ready) => "",
+    }
+}
+
+fn payload_digest_v2(value: &DiagnosticBundleV2) -> Result<String, String> {
+    let mut unsigned = value.clone();
+    unsigned.base.payload_digest.clear();
+    digest(&unsigned).map_err(|_| "DIAGNOSTIC_DIGEST_FAILED".into())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_diagnostic_bundle_v2(
+    assessment: &BootstrapAssessmentV1,
+    controller: Option<&ControllerSnapshot>,
+    adapter: Option<&AdapterInspectionV1>,
+    profile: Option<&ManagementProfileV1>,
+    requirement: Option<&ManagementProfileRequirementV1>,
+    rollout: Option<&ConvergenceStatusV1>,
+    runtime: &RuntimeObservationV1,
+    now: u64,
+) -> Result<DiagnosticBundleV2, String> {
+    if runtime.schema_version != RUNTIME_OBSERVATION_SCHEMA || runtime.authorizes_mutation {
+        return Err("DIAGNOSTIC_RUNTIME_INVALID".into());
+    }
+    let observed_at = DateTime::parse_from_rfc3339(&runtime.observed_at)
+        .map_err(|_| "DIAGNOSTIC_RUNTIME_INVALID")?
+        .timestamp();
+    let expires_at = DateTime::parse_from_rfc3339(&runtime.expires_at)
+        .map_err(|_| "DIAGNOSTIC_RUNTIME_INVALID")?
+        .timestamp();
+    let observed_at = u64::try_from(observed_at).map_err(|_| "DIAGNOSTIC_RUNTIME_INVALID")?;
+    let expires_at = u64::try_from(expires_at).map_err(|_| "DIAGNOSTIC_RUNTIME_INVALID")?;
+    let mut base = create_diagnostic_bundle(
+        assessment,
+        controller,
+        adapter,
+        profile,
+        requirement,
+        rollout,
+        now,
+    )?;
+    base.schema_version = DIAGNOSTIC_SCHEMA_V2.into();
+    if runtime.evidence_state == RuntimeEvidenceStateV1::Current {
+        base.expires_at = base.expires_at.min(expires_at);
+    }
+    base.artifacts.push(artifact(
+        "runtime_observation",
+        Some(runtime),
+        Some(observed_at),
+        Some(expires_at),
+    )?);
+    base.checks.push(runtime_check(runtime));
+    base.overall = overall(&base.checks);
+    let action = runtime_action(runtime);
+    if !action.is_empty() {
+        base.safe_next_actions.push(action.into());
+        base.safe_next_actions.sort();
+        base.safe_next_actions.dedup();
+    }
+    let mut bundle = DiagnosticBundleV2 {
+        base,
+        runtime: runtime_summary(runtime),
+    };
+    bundle.base.payload_digest = payload_digest_v2(&bundle)?;
+    validate_diagnostic_bundle_v2(&bundle, now)?;
+    Ok(bundle)
+}
+
+pub fn validate_diagnostic_bundle_v2(value: &DiagnosticBundleV2, now: u64) -> Result<(), String> {
+    if value.base.schema_version != DIAGNOSTIC_SCHEMA_V2
+        || value.base.evidence_class != DIAGNOSTIC_EVIDENCE_CLASS
+        || value.base.authorizes_mutation
+        || value.base.created_at > now
+        || now > value.base.expires_at
+        || value.base.artifacts.len() != 6
+        || value.base.checks.len() > 64
+        || value.base.safe_next_actions.len() > 64
+        || value.base.payload_digest != payload_digest_v2(value)?
+        || value.runtime.reason_codes.len() > 128
+        || value.runtime.subsystem_state_counts.len() > 16
+        || value.runtime.external_connectivity_state_counts.len() > 16
+    {
+        return Err("DIAGNOSTIC_BUNDLE_INVALID".into());
+    }
+    let kinds = value
+        .base
+        .artifacts
+        .iter()
+        .map(|artifact| artifact.kind.as_str())
+        .collect::<BTreeSet<_>>();
+    if kinds.len() != 6
+        || !kinds.contains("runtime_observation")
+        || value
+            .base
+            .artifacts
+            .iter()
+            .any(|artifact| match artifact.state {
+                DiagnosticArtifactState::Valid => artifact.source_digest.is_none(),
+                DiagnosticArtifactState::NotAvailable => artifact.source_digest.is_some(),
+            })
+        || overall(&value.base.checks) != value.base.overall
     {
         return Err("DIAGNOSTIC_BUNDLE_INVALID".into());
     }
