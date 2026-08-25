@@ -10,6 +10,10 @@ domain-local controller and bounded synthetic and runtime-configuration
 adapters. It does not include a remote administration service, service restart
 authority or production deployment.
 
+For a bounded five-minute evaluation, packaged-crate rules and the offline
+bundle procedure, see the
+[`0.1 developer-preview installation guide`](docs/DEVELOPER_PREVIEW_INSTALLATION.md).
+
 ## State model
 
 The contracts keep four states distinct:

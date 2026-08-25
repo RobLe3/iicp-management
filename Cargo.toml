@@ -2,8 +2,35 @@
 name = "iicp-management-core"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.86"
+description = "Implementation-neutral policy, planning, controller, and conformance foundation for IICP management"
 license = "Apache-2.0"
-publish = false
+keywords = ["iicp", "policy", "management", "infrastructure"]
+categories = ["command-line-utilities", "config"]
+repository = "https://github.com/RobLe3/iicp-management"
+documentation = "https://docs.rs/iicp-management-core"
+readme = "README.md"
+publish = ["crates-io"]
+include = [
+    "Cargo.toml",
+    "Cargo.lock",
+    "LICENSE",
+    "README.md",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "COMPATIBILITY.md",
+    "CONFORMANCE.md",
+    "LOCAL_AUTHORITY.md",
+    "contracts/**",
+    "docs/**",
+    "examples/**",
+    "fixtures/**",
+    "src/**",
+]
+
+[lib]
+name = "iicp_management_core"
+path = "src/lib.rs"
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
