@@ -569,6 +569,16 @@ fn only_bounded_classes_create_non_authorizing_proposals() {
             .proposal_id,
         proposal.proposal_id
     );
+    let lifecycle = receipt("operation:reconcile:0", ExecutionState::Converged);
+    store
+        .record_reconciliation_receipt(&proposal.proposal_id, &fresh, &lifecycle, now + 3)
+        .unwrap();
+    assert_eq!(
+        store
+            .record_reconciliation_receipt(&proposal.proposal_id, &fresh, &lifecycle, now + 3)
+            .unwrap_err(),
+        "RECONCILIATION_RECEIPT_ALREADY_RECORDED"
+    );
 }
 
 #[test]
