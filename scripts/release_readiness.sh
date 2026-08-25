@@ -46,7 +46,7 @@ tar -tzf "$crate" >"$listing"
 for required in Cargo.lock Cargo.toml README.md COMPATIBILITY.md CHANGELOG.md CONFORMANCE.md LICENSE "docs/RELEASE_NOTES_$version.md"; do
   grep -Eq "/${required}$" "$listing" || fail "package is missing $required"
 done
-for required in contracts/management-profile-v1.schema.json fixtures/management-profile-conformance-v1.json examples/finance/management-profile.json docs/ADR-008-single-crate-developer-preview-release.md contracts/diagnostic-bundle-v1.schema.json fixtures/diagnostic-bundle-conformance-v1.json docs/ADR-009-diagnostic-bundles-are-minimized-evidence.md docs/DIAGNOSTIC_BUNDLE_WORKFLOW.md; do
+for required in contracts/management-profile-v1.schema.json fixtures/management-profile-conformance-v1.json examples/finance/management-profile.json docs/ADR-008-single-crate-developer-preview-release.md contracts/diagnostic-bundle-v1.schema.json fixtures/diagnostic-bundle-conformance-v1.json docs/ADR-009-diagnostic-bundles-are-minimized-evidence.md docs/DIAGNOSTIC_BUNDLE_WORKFLOW.md docs/LOCAL_MANAGEMENT_EVALUATION.md; do
   grep -Eq "/${required}$" "$listing" || fail "package is missing $required"
 done
 
@@ -69,6 +69,27 @@ json.dump(value["diagnostic_bundle"],open(sys.argv[2],"w",encoding="utf-8"),inde
 PY
 "$install_root/bin/iicp-management" diagnostics verify "$diagnostic" >/dev/null
 "$install_root/bin/iicp-management" diagnostics show "$diagnostic" >/dev/null
+authorized="$cleanup_dir/authorized.json"
+"$install_root/bin/iicp-management" --json bootstrap sandbox --exercise authorized-local >"$authorized"
+python3 - "$authorized" <<'PY'
+import json,sys
+value=json.load(open(sys.argv[1],encoding="utf-8"))
+assert value["lifecycle"]["state"] == "converged"
+assert value["evidence_class"] == "project_rehearsal"
+assert value["representative"] is False
+assert value["activated_external_state"] is False
+PY
+for scenario in verification-failure interrupted-resume; do
+  result="$cleanup_dir/$scenario.json"
+  "$install_root/bin/iicp-management" --json bootstrap sandbox --exercise authorized-local --scenario "$scenario" >"$result"
+  python3 - "$scenario" "$result" <<'PY'
+import json,sys
+scenario,value=sys.argv[1],json.load(open(sys.argv[2],encoding="utf-8"))
+expected={"verification-failure":"failed","interrupted-resume":"partially_converged"}
+assert value["lifecycle"]["state"] == expected[scenario]
+assert value["automatic_retry_permitted"] is False
+PY
+done
 "$install_root/bin/iicp-management-conformance" >/dev/null
 set +e
 controller_help="$($install_root/bin/iicp-management-controller 2>&1)"; controller_status=$?
@@ -86,6 +107,7 @@ EOF
 offline_install="$cleanup_dir/offline-install"
 CARGO_HOME="$cleanup_dir/offline-cargo-home" cargo install --offline --locked --path "$source_dir" --root "$offline_install"
 "$offline_install/bin/iicp-management-conformance" >/dev/null
+"$offline_install/bin/iicp-management" --json bootstrap sandbox --exercise authorized-local >/dev/null
 
 mkdir -p "$OUTPUT"
 offline="$OUTPUT/iicp-management-core-$version-offline.tar.gz"

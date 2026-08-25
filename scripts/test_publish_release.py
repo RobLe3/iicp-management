@@ -13,12 +13,21 @@ from publish_release import (
     cargo_credentials_available,
     execute,
     planned_actions,
+    validate_release_version,
     validate_remote_release,
     verify_registry_checksum,
 )
 
 
 class PublicationStateTests(unittest.TestCase):
+    def test_release_version_is_exact_stable_semver(self):
+        validate_release_version("0.3.0")
+        for value in ("0.3.0-rc.1", "0.3", "latest", "v0.3.0", "03.0.0"):
+            with self.subTest(value=value), self.assertRaisesRegex(
+                ReleaseError, "RELEASE_VERSION_INVALID"
+            ):
+                validate_release_version(value)
+
     def test_new_release_runs_every_stage(self):
         self.assertEqual(
             planned_actions(ReleaseState(False, False, False, False, False)),

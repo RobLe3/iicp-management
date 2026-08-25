@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0-rc.1 — 2026-08-25
+## 0.3.0 — 2026-08-25 developer preview
 
 - Adds a one-command, authorized local management exercise with bounded
   project-rehearsal evidence.

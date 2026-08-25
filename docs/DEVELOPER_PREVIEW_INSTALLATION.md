@@ -34,7 +34,7 @@ After a reviewed release is published, install the exact version with its
 published lockfile:
 
 ```bash
-cargo install iicp-management-core --version 0.2.0 --locked
+cargo install iicp-management-core --version 0.3.0 --locked
 ```
 
 Do not remove `--locked` if installation fails. A locked failure means the
@@ -50,8 +50,8 @@ the packaged source and vendored dependencies. Transfer both the bundle and
 the extracted directory:
 
 ```bash
-tar -xzf iicp-management-core-0.2.0-offline.tar.gz
-cd iicp-management-core-0.2.0
+tar -xzf iicp-management-core-0.3.0-offline.tar.gz
+cd iicp-management-core-0.3.0
 CARGO_HOME="$(mktemp -d)" cargo install --offline --locked --path .
 iicp-management-conformance
 ```
