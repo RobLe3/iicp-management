@@ -21,3 +21,11 @@ or profile generation plus positive and negative fixtures.
 Publication, installation, deployment and adoption are independent facts. A
 crate or GitHub release does not make the controller production-ready and does
 not authorize it to manage a target.
+
+## Friction evidence
+
+`iicp.management-friction-evidence.v1` remains valid as historical project
+rehearsal evidence and is not reinterpreted. Version 2 adds typed trial
+qualification, environment, outcome and aggregation fields under new schema
+identifiers. Consumers must select the schema they understand; an unknown v2
+artifact must not be silently treated as v1 or as release authorization.

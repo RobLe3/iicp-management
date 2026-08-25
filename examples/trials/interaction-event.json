@@ -1,0 +1,7 @@
+{
+  "schema_version": "iicp.management-administrator-trial-event.v2",
+  "event_id": "event:policy-simulation:001",
+  "occurred_at": 1787659200,
+  "kind": "interaction",
+  "phase_code": "policy_preview"
+}
