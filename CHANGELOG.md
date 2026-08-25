@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0-rc.1 — candidate
+## 0.4.0 — 2026-08-25 developer preview
 
 - Add privacy-bounded administrator trial-session and friction-evidence v2 contracts.
 - Add atomic trial start, event, finish, verify and same-workflow summary commands.

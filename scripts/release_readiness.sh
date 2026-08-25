@@ -117,6 +117,7 @@ assert value["automatic_retry_permitted"] is False
 PY
 done
 "$install_root/bin/iicp-management-conformance" >/dev/null
+"$install_root/bin/iicp-management" completion bash | grep -q "iicp-management __complete"
 exercise_trial "$install_root/bin/iicp-management" online
 set +e
 controller_help="$($install_root/bin/iicp-management-controller 2>&1)"; controller_status=$?
@@ -134,6 +135,7 @@ EOF
 offline_install="$cleanup_dir/offline-install"
 CARGO_HOME="$cleanup_dir/offline-cargo-home" cargo install --offline --locked --path "$source_dir" --root "$offline_install"
 "$offline_install/bin/iicp-management-conformance" >/dev/null
+"$offline_install/bin/iicp-management" completion bash | grep -q "iicp-management __complete"
 "$offline_install/bin/iicp-management" --json bootstrap sandbox --exercise authorized-local >/dev/null
 exercise_trial "$offline_install/bin/iicp-management" offline
 
