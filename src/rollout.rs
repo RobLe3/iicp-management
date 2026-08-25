@@ -1,7 +1,12 @@
+use crate::adapters::AdapterInspectionV1;
 use crate::apply_gate::{validate_apply_gate, LocalApplyGateV1};
 use crate::controller::{DecisionState, SIGNATURE_PROFILE};
 use crate::digest;
 use crate::execution::{ApplyLifecycleReceiptV1, ExecutionState};
+use crate::reconciliation::{
+    assess_inspection, validate_proposal, DriftAssessmentV1, DriftClass, DriftStatusV1,
+    ReconciliationProposalV1, DRIFT_SCHEMA, RECONCILIATION_SCHEMA,
+};
 use base64::{engine::general_purpose::STANDARD, Engine};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
@@ -221,6 +226,16 @@ impl RolloutStore {
                batch INTEGER NOT NULL, required INTEGER NOT NULL, state TEXT NOT NULL,
                reason TEXT NOT NULL, receipt_json TEXT,
                PRIMARY KEY(run_id,target_id)
+             );
+             CREATE TABLE IF NOT EXISTS drift_assessments(
+               assessment_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, target_id TEXT NOT NULL,
+               observed_at INTEGER NOT NULL, assessment_json TEXT NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS drift_assessments_current
+               ON drift_assessments(run_id,target_id,observed_at DESC);
+             CREATE TABLE IF NOT EXISTS reconciliation_proposals(
+               proposal_id TEXT PRIMARY KEY, run_id TEXT NOT NULL, target_id TEXT NOT NULL,
+               created_at INTEGER NOT NULL, proposal_json TEXT NOT NULL, receipt_json TEXT
              );",
         ).map_err(|_| "ROLLOUT_STORAGE_FAILED")?;
         Ok(Self { connection })
@@ -547,6 +562,185 @@ impl RolloutStore {
             return Err("PARTIAL_ACCEPTANCE_STALE".into());
         }
         self.status(&value.run_id)
+    }
+
+    pub fn assess_drift(
+        &mut self,
+        run_id: &str,
+        inspection: &AdapterInspectionV1,
+        now: u64,
+    ) -> Result<DriftStatusV1, String> {
+        let status = self.status(run_id)?;
+        if !matches!(
+            status.state,
+            RunState::Converged | RunState::PartiallyConverged
+        ) {
+            return Err("DRIFT_RUN_NOT_TERMINAL".into());
+        }
+        let manifest = self.manifest(run_id)?;
+        let assessments = assess_inspection(&manifest, &status, inspection, now)?;
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|_| "ROLLOUT_STORAGE_FAILED")?;
+        for assessment in &assessments {
+            let json =
+                serde_json::to_string(assessment).map_err(|_| "ROLLOUT_SERIALIZATION_FAILED")?;
+            let inserted = transaction.execute(
+                "INSERT OR IGNORE INTO drift_assessments(assessment_id,run_id,target_id,observed_at,assessment_json) VALUES(?1,?2,?3,?4,?5)",
+                params![assessment.assessment_id, assessment.run_id, assessment.target_id, assessment.observed_at, json],
+            ).map_err(|_| "ROLLOUT_STORAGE_FAILED")?;
+            if inserted == 0 {
+                let existing: String = transaction
+                    .query_row(
+                        "SELECT assessment_json FROM drift_assessments WHERE assessment_id=?1",
+                        [&assessment.assessment_id],
+                        |row| row.get(0),
+                    )
+                    .map_err(|_| "ROLLOUT_STORAGE_FAILED")?;
+                if existing != json {
+                    return Err("DRIFT_ASSESSMENT_ID_COLLISION".into());
+                }
+            }
+        }
+        transaction.commit().map_err(|_| "ROLLOUT_STORAGE_FAILED")?;
+        self.drift_status(run_id)
+    }
+
+    pub fn drift_status(&self, run_id: &str) -> Result<DriftStatusV1, String> {
+        let status = self.status(run_id)?;
+        let mut statement = self.connection.prepare(
+            "SELECT assessment_json FROM drift_assessments d WHERE run_id=?1 AND observed_at=(SELECT MAX(observed_at) FROM drift_assessments WHERE run_id=d.run_id AND target_id=d.target_id) ORDER BY target_id"
+        ).map_err(|_| "ROLLOUT_STORAGE_FAILED")?;
+        let assessments = statement
+            .query_map([run_id], |row| row.get::<_, String>(0))
+            .map_err(|_| "ROLLOUT_STORAGE_FAILED")?
+            .map(|value| {
+                serde_json::from_str(&value.map_err(|_| "ROLLOUT_STORAGE_FAILED".to_string())?)
+                    .map_err(|_| "ROLLOUT_STORAGE_CORRUPT".to_string())
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(DriftStatusV1 {
+            schema_version: DRIFT_SCHEMA.into(),
+            run_id: run_id.into(),
+            manifest_digest: status.manifest_digest,
+            authorizes_mutation: false,
+            assessments,
+        })
+    }
+
+    pub fn create_reconciliation_proposal(
+        &mut self,
+        run_id: &str,
+        target_id: &str,
+        drift_class: DriftClass,
+        now: u64,
+    ) -> Result<ReconciliationProposalV1, String> {
+        if !drift_class.permits_bounded_reconciliation() {
+            return Err("RECONCILIATION_CLASS_REVIEW_REQUIRED".into());
+        }
+        let assessment = self.latest_assessment(run_id, target_id)?;
+        let manifest = self.manifest(run_id)?;
+        let target = manifest
+            .targets
+            .iter()
+            .find(|value| value.target_id == target_id)
+            .ok_or("ROLLOUT_TARGET_NOT_FOUND")?;
+        let proposal = ReconciliationProposalV1 {
+            schema_version: RECONCILIATION_SCHEMA.into(),
+            proposal_id: format!("reconcile:{}:{}:{}", run_id, target_id, now),
+            run_id: run_id.into(),
+            target_id: target_id.into(),
+            assessment_digest: digest(&assessment).map_err(|_| "RECONCILIATION_INVALID")?,
+            drift_class,
+            desired_digest: assessment.expected_digest.clone(),
+            expected_observed_generation: assessment
+                .observed_generation
+                .ok_or("RECONCILIATION_EVIDENCE_INCOMPLETE")?,
+            related_operation_id: target.gate.operation.operation_id.clone(),
+            created_at: now,
+            expires_at: now.saturating_add(300),
+            requires_fresh_apply_gate: true,
+            authorizes_mutation: false,
+        };
+        validate_proposal(&proposal, &assessment, now)?;
+        let json = serde_json::to_string(&proposal).map_err(|_| "ROLLOUT_SERIALIZATION_FAILED")?;
+        self.connection.execute(
+            "INSERT INTO reconciliation_proposals(proposal_id,run_id,target_id,created_at,proposal_json) VALUES(?1,?2,?3,?4,?5)",
+            params![proposal.proposal_id, proposal.run_id, proposal.target_id, proposal.created_at, json],
+        ).map_err(|_| "ROLLOUT_STORAGE_FAILED")?;
+        Ok(proposal)
+    }
+
+    fn latest_assessment(
+        &self,
+        run_id: &str,
+        target_id: &str,
+    ) -> Result<DriftAssessmentV1, String> {
+        let json: String = self.connection.query_row(
+            "SELECT assessment_json FROM drift_assessments WHERE run_id=?1 AND target_id=?2 ORDER BY observed_at DESC LIMIT 1",
+            params![run_id,target_id], |row| row.get(0),
+        ).optional().map_err(|_| "ROLLOUT_STORAGE_FAILED")?.ok_or("DRIFT_ASSESSMENT_NOT_FOUND")?;
+        serde_json::from_str(&json).map_err(|_| "ROLLOUT_STORAGE_CORRUPT".into())
+    }
+
+    pub fn validate_reconciliation_gate(
+        &self,
+        proposal_id: &str,
+        gate: &LocalApplyGateV1,
+        now: u64,
+    ) -> Result<ReconciliationProposalV1, String> {
+        let json: String = self
+            .connection
+            .query_row(
+                "SELECT proposal_json FROM reconciliation_proposals WHERE proposal_id=?1",
+                [proposal_id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|_| "ROLLOUT_STORAGE_FAILED")?
+            .ok_or("RECONCILIATION_PROPOSAL_NOT_FOUND")?;
+        let proposal: ReconciliationProposalV1 =
+            serde_json::from_str(&json).map_err(|_| "ROLLOUT_STORAGE_CORRUPT")?;
+        let assessment = self.latest_assessment(&proposal.run_id, &proposal.target_id)?;
+        validate_proposal(&proposal, &assessment, now)?;
+        let manifest = self.manifest(&proposal.run_id)?;
+        if validate_apply_gate(gate, now).is_err()
+            || gate.operation.target_id != proposal.target_id
+            || gate.operation.desired_digest != proposal.desired_digest
+            || gate.operation.expected_generation != proposal.expected_observed_generation
+            || gate.operation.related_operation_id.as_deref()
+                != Some(&proposal.related_operation_id)
+            || gate.request.administrative_domain != manifest.administrative_domain
+            || gate.request.audience != manifest.audience
+        {
+            return Err("RECONCILIATION_GATE_BINDING_INVALID".into());
+        }
+        Ok(proposal)
+    }
+
+    pub fn record_reconciliation_receipt(
+        &mut self,
+        proposal_id: &str,
+        gate: &LocalApplyGateV1,
+        receipt: &ApplyLifecycleReceiptV1,
+        now: u64,
+    ) -> Result<(), String> {
+        let proposal = self.validate_reconciliation_gate(proposal_id, gate, now)?;
+        if receipt.operation_id != gate.operation.operation_id
+            || receipt.operation_id == proposal.related_operation_id
+        {
+            return Err("RECONCILIATION_RECEIPT_BINDING_INVALID".into());
+        }
+        let json = serde_json::to_string(receipt).map_err(|_| "ROLLOUT_SERIALIZATION_FAILED")?;
+        let changed = self.connection.execute(
+            "UPDATE reconciliation_proposals SET receipt_json=?2 WHERE proposal_id=?1 AND receipt_json IS NULL",
+            params![proposal_id,json],
+        ).map_err(|_| "ROLLOUT_STORAGE_FAILED")?;
+        if changed != 1 {
+            return Err("RECONCILIATION_RECEIPT_ALREADY_RECORDED".into());
+        }
+        Ok(())
     }
 }
 

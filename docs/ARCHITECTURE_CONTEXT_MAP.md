@@ -18,6 +18,7 @@ administrator, or product-specific operator experiences.
 | Environment bootstrap and adoption | Preflight observations, non-authorizing recommendations, required decisions, proposals and friction evidence | Trust establishment, package installation internals, secret values or activation |
 | Policy templates and impact preview | Versioned template inputs, deterministic rendering and evidence-bound change projection | Independent policy semantics, activation authority, invented operational metrics or convergence claims |
 | Staged rollout coordination | Immutable target sets, canary and batch order, durable per-target lifecycle evidence, explicit retry and signed partial acceptance | Target authorization, global transactions, automatic compensation, cross-domain authority or continuous remediation |
+| Drift detection and bounded reconciliation | Fresh post-rollout observation, expected/observed comparison, review classification and non-authorizing one-shot proposals | Continuous remediation, unsafe-class automation, cross-domain authority or invented convergence |
 
 ## State flow
 

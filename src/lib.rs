@@ -13,6 +13,7 @@ pub mod execution;
 pub mod ipc;
 pub mod policy_lifecycle;
 pub mod progressive_authority;
+pub mod reconciliation;
 pub mod recovery;
 pub mod rollout;
 pub mod templates;

@@ -21,6 +21,7 @@ use iicp_management_core::policy_lifecycle::{
     PolicyWorkspaceV1,
 };
 use iicp_management_core::progressive_authority::OperatingMode;
+use iicp_management_core::reconciliation::DriftClass;
 use iicp_management_core::recovery::{
     validate_recovery_gate, LocalRecoveryExecutionV1, LocalRecoveryGateV1,
     RECOVERY_EXECUTION_SCHEMA,
@@ -88,7 +89,7 @@ execute-apply <socket-or-pipe> <apply-request.json> <--confirm operation-id|--no
 preview-recovery <recovery-request.json>\n\
 request-recovery <socket-or-pipe> <recovery-request.json> <--confirm operation-id|--non-interactive>\n\
 execute-recovery <socket-or-pipe> <recovery-request.json> <--confirm operation-id|--non-interactive>\n\
-rollout <validate|create|status|pause|resume|run-batch|retry-target|accept-partial> ...\n\
+rollout <validate|create|status|pause|resume|run-batch|retry-target|accept-partial|assess-drift|drift-status|propose-reconcile|reconcile-target> ...\n\
 bootstrap <assess|export> <assessment.json>\n\
 bootstrap proposal <assessment.json> <issuer> <audience> <generation>\n\
 bootstrap import <desired-state.json>\n\
@@ -782,6 +783,79 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                     let output = store.accept_partial(&acceptance, key, now)?;
                     emit(&output, json_output, || {
                         format!("Partial convergence accepted for {}", output.run_id)
+                    });
+                }
+                Some("assess-drift") => {
+                    let a = require(&args[2..], 3)?;
+                    let inspection: AdapterInspectionV1 = read(&a[2])?;
+                    let mut store = RolloutStore::open(Path::new(&a[0]))?;
+                    let output = store.assess_drift(&a[1], &inspection, now)?;
+                    let drifted = output
+                        .assessments
+                        .iter()
+                        .filter(|value| {
+                            value.state == iicp_management_core::reconciliation::DriftState::Drifted
+                        })
+                        .count();
+                    let unknown = output
+                        .assessments
+                        .iter()
+                        .filter(|value| {
+                            value.state == iicp_management_core::reconciliation::DriftState::Unknown
+                        })
+                        .count();
+                    emit(&output, json_output, || {
+                        format!("Drift assessment: {drifted} drifted, {unknown} unknown")
+                    });
+                }
+                Some("drift-status") => {
+                    let a = require(&args[2..], 2)?;
+                    let store = RolloutStore::open(Path::new(&a[0]))?;
+                    let output = store.drift_status(&a[1])?;
+                    emit(&output, json_output, || {
+                        output
+                            .assessments
+                            .iter()
+                            .map(|value| {
+                                format!("{}: {:?} ({})", value.target_id, value.state, value.reason)
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    });
+                }
+                Some("propose-reconcile") => {
+                    let a = require(&args[2..], 4)?;
+                    let drift_class: DriftClass = serde_json::from_value(json!(a[3]))
+                        .map_err(|_| "RECONCILIATION_CLASS_INVALID")?;
+                    let mut store = RolloutStore::open(Path::new(&a[0]))?;
+                    let output =
+                        store.create_reconciliation_proposal(&a[1], &a[2], drift_class, now)?;
+                    emit(&output, json_output, || {
+                        format!(
+                            "Proposal {} created; fresh apply authorization required",
+                            output.proposal_id
+                        )
+                    });
+                }
+                Some("reconcile-target") => {
+                    let a = require(&args[2..], 6)?;
+                    let gate: LocalApplyGateV1 = read(&a[2])?;
+                    if a[4] != "--confirm" || a[5] != gate.operation.operation_id {
+                        return Err("RECONCILIATION_CONFIRMATION_REQUIRED".into());
+                    }
+                    let mut store = RolloutStore::open(Path::new(&a[0]))?;
+                    store.validate_reconciliation_gate(&a[1], &gate, now)?;
+                    let operation_id = gate.operation.operation_id.clone();
+                    let output = execute_apply(
+                        Path::new(&a[3]),
+                        &LocalApplyExecutionV1 {
+                            schema_version: EXECUTION_SCHEMA.into(),
+                            gate: gate.clone(),
+                        },
+                    )?;
+                    store.record_reconciliation_receipt(&a[1], &gate, &output, now)?;
+                    emit(&output, json_output, || {
+                        format!("Reconciliation {operation_id}: {:?}", output.state)
                     });
                 }
                 _ => return Err("USAGE_INVALID".into()),
