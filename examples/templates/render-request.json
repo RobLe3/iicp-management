@@ -1,0 +1,12 @@
+{
+  "schema_version": "iicp.management-template-render.v1",
+  "template_id": "eu-processing",
+  "revision_id": "r1",
+  "authority": "domain:example",
+  "scope": "application:example",
+  "application_id": "application:example",
+  "binding_id": "binding:example",
+  "parameters": {
+    "allowed_regions": ["EU"]
+  }
+}

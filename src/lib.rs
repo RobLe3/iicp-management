@@ -14,6 +14,7 @@ pub mod ipc;
 pub mod policy_lifecycle;
 pub mod progressive_authority;
 pub mod recovery;
+pub mod templates;
 
 pub const CONTRACT_VERSION: &str = "1";
 pub const PLANNER_VERSION: &str = "iicp-management-planner/0.1.0";

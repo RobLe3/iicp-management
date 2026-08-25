@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/contracts/policy-impact-v1.schema.json",
+  "title": "IICP Management Policy Impact Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "authorizes_mutation", "affected_candidates", "newly_allowed", "newly_denied", "unresolved_evidence", "incompatible", "missing_fallback", "entries"],
+  "properties": {
+    "schema_version": {"const": "iicp.management-policy-impact.v1"},
+    "authorizes_mutation": {"const": false},
+    "affected_candidates": {"type": "integer", "minimum": 0},
+    "newly_allowed": {"type": "integer", "minimum": 0},
+    "newly_denied": {"type": "integer", "minimum": 0},
+    "unresolved_evidence": {"type": "integer", "minimum": 0},
+    "incompatible": {"type": "integer", "minimum": 0},
+    "missing_fallback": {"type": "integer", "minimum": 0},
+    "entries": {"type": "array", "maxItems": 10000, "items": {"$ref": "#/$defs/entry"}}
+  },
+  "$defs": {
+    "metric": {
+      "type": "object", "additionalProperties": false, "required": ["availability"],
+      "properties": {
+        "availability": {"enum": ["SUPPLIED", "NOT_AVAILABLE"]},
+        "value": {}, "unit": {"type": "string"},
+        "evidence_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "entry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["candidate_id", "current_decision", "proposed_decision", "decision_changed", "newly_allowed", "newly_denied", "unresolved_evidence", "compatibility", "fallback", "metrics"],
+      "properties": {
+        "candidate_id": {"type": "string", "minLength": 1},
+        "current_decision": {"enum": ["allow", "deny", "indeterminate"]},
+        "proposed_decision": {"enum": ["allow", "deny", "indeterminate"]},
+        "decision_changed": {"type": "boolean"},
+        "newly_allowed": {"type": "boolean"},
+        "newly_denied": {"type": "boolean"},
+        "unresolved_evidence": {"type": "boolean"},
+        "compatibility": {"enum": ["compatible", "incompatible", "unknown"]},
+        "fallback": {"enum": ["AVAILABLE", "MISSING", "UNKNOWN"]},
+        "metrics": {"type": "object", "required": ["cost", "latency", "quality", "capacity"], "additionalProperties": {"$ref": "#/$defs/metric"}}
+      }
+    }
+  }
+}

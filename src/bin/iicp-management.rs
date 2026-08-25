@@ -15,32 +15,31 @@ use iicp_management_core::ipc::{
     execute_apply, execute_recovery, request_apply, request_recovery, submit_plan,
 };
 use iicp_management_core::policy_lifecycle::{
-    simulate_policy_change, ApplicationBindingV1, InMemoryPolicyRepository, PolicyActivationV1,
-    PolicyRepository, PolicyRevisionV1, PolicySetV1,
+    repository_from_workspace, simulate_policy_change, ApplicationBindingV1,
+    InMemoryPolicyRepository, PolicyDisposition, PolicyReferenceV1, PolicyRevisionV1,
+    PolicyWorkspaceV1,
 };
 use iicp_management_core::progressive_authority::OperatingMode;
 use iicp_management_core::recovery::{
     validate_recovery_gate, LocalRecoveryExecutionV1, LocalRecoveryGateV1,
     RECOVERY_EXECUTION_SCHEMA,
 };
+use iicp_management_core::templates::{
+    builtin_templates, preview_impact, render_template, template_by_id, CompatibilityStatus,
+    ImpactCandidateV1, ImpactRequestV1, TemplateRenderRequestV1, IMPACT_SCHEMA,
+    TEMPLATE_RENDER_SCHEMA,
+};
 use iicp_management_core::{
     plan, validate_bundle, verify_receipt, AcceptedState, DesiredStateBundle, Plan, Receipt,
 };
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Value};
-use std::{collections::BTreeSet, env, fs, path::Path, process::ExitCode};
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PolicyWorkspace {
-    #[serde(default)]
-    revisions: Vec<PolicyRevisionV1>,
-    #[serde(default)]
-    policy_sets: Vec<PolicySetV1>,
-    binding: ApplicationBindingV1,
-    #[serde(default)]
-    activation: Option<PolicyActivationV1>,
-}
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env, fs,
+    path::Path,
+    process::ExitCode,
+};
 
 fn read<T: DeserializeOwned>(path: &str) -> Result<T, String> {
     let bytes = fs::read(path).map_err(|_| format!("INPUT_READ_FAILED:{path}"))?;
@@ -48,23 +47,8 @@ fn read<T: DeserializeOwned>(path: &str) -> Result<T, String> {
 }
 
 fn repository(path: &str) -> Result<InMemoryPolicyRepository, String> {
-    let input: PolicyWorkspace = read(path)?;
-    let mut repository = InMemoryPolicyRepository::default();
-    for revision in input.revisions {
-        repository
-            .store_revision(revision)
-            .map_err(|e| e.to_string())?;
-    }
-    for set in input.policy_sets {
-        repository.store_set(set).map_err(|e| e.to_string())?;
-    }
-    repository
-        .store_binding(input.binding)
-        .map_err(|e| e.to_string())?;
-    if let Some(activation) = input.activation {
-        repository.activate(activation).map_err(|e| e.to_string())?;
-    }
-    Ok(repository)
+    let input: PolicyWorkspaceV1 = read(path)?;
+    repository_from_workspace(input).map_err(|error| error.to_string())
 }
 
 fn emit<T: Serialize>(value: &T, json_output: bool, summary: impl FnOnce() -> String) {
@@ -79,11 +63,14 @@ fn emit<T: Serialize>(value: &T, json_output: bool, summary: impl FnOnce() -> St
 }
 
 fn usage() -> &'static str {
-    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|bootstrap|doctor|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|controller|evidence> ...\n\
+    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|template|impact|bootstrap|doctor|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|controller|evidence> ...\n\
 validate <bundle.json>\nplan <bundle.json> <accepted.json>\ndiff <plan.json>\nsimulate <current-workspace.json> <proposed-workspace.json> <facts.json> <binding-id>\n\
 show <stored-policies|active-policies|effective-policy> <workspace.json> [facts.json] [binding-id]\n\
 explain decision <workspace.json> <facts.json> <binding-id> <intent> <decision-id>\n\
 verify-receipt <receipt.json> <plan.json> <audience>\nadapter inspect <adapter-inspection.json>\n\
+template <list|show> [template-id] [revision-id]\n\
+template render <render-request.json>\n\
+impact preview <impact-request.json>\n\
 submit-plan <socket-or-pipe> <submission.json>\n\
 preview-apply <apply-request.json>\n\
 request-apply <socket-or-pipe> <apply-request.json> <--confirm operation-id|--non-interactive>\n\
@@ -237,6 +224,48 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                 )
             });
         }
+        Some("template") => match args.get(1).map(String::as_str) {
+            Some("list") if args.len() == 2 => {
+                let output = builtin_templates();
+                let lines = output
+                    .iter()
+                    .map(|item| {
+                        format!("{}@{}  {}", item.template_id, item.revision_id, item.title)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                emit(&output, json_output, || lines);
+            }
+            Some("show") if args.len() == 3 || args.len() == 4 => {
+                let revision = args.get(3).map(String::as_str).unwrap_or("r1");
+                let output = template_by_id(&args[2], revision)
+                    .ok_or_else(|| "TEMPLATE_NOT_FOUND".to_string())?;
+                let title = output.title.clone();
+                let description = output.description.clone();
+                emit(&output, json_output, || format!("{title}\n{description}"));
+            }
+            Some("render") if args.len() == 3 => {
+                let request: TemplateRenderRequestV1 = read(&args[2])?;
+                let template = template_by_id(&request.template_id, &request.revision_id)
+                    .ok_or_else(|| "TEMPLATE_NOT_FOUND".to_string())?;
+                let output = render_template(&template, &request)?;
+                emit(&output, true, String::new);
+            }
+            _ => return Err("USAGE_INVALID".into()),
+        },
+        Some("impact") if args.get(1).map(String::as_str) == Some("preview") => {
+            let a = require(&args[2..], 1)?;
+            let request: ImpactRequestV1 = read(&a[0])?;
+            let output = preview_impact(&request, Controller::now())?;
+            let changed = output.affected_candidates;
+            let denied = output.newly_denied;
+            let unknown = output.unresolved_evidence;
+            emit(&output, json_output, || {
+                format!(
+                    "Impact preview: {changed} changed, {denied} newly denied, {unknown} unresolved"
+                )
+            });
+        }
         Some("bootstrap") => match args.get(1).map(String::as_str) {
             Some("assess") | Some("export") => {
                 let a = require(&args[2..], 1)?;
@@ -300,6 +329,91 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                 validate_assessment(&assessment, now)?;
                 let proposal =
                     create_proposal(&assessment, "sandbox", "controller:sandbox", 0, now)?;
+                let management_plan = plan(
+                    &proposal,
+                    &AcceptedState {
+                        generation: 0,
+                        resource_digests: BTreeMap::new(),
+                    },
+                    &BTreeSet::new(),
+                    1024,
+                )
+                .map_err(|error| error.to_string())?;
+                let template = template_by_id("high-availability", "r1")
+                    .ok_or_else(|| "TEMPLATE_NOT_FOUND".to_string())?;
+                let rendered = render_template(
+                    &template,
+                    &TemplateRenderRequestV1 {
+                        schema_version: TEMPLATE_RENDER_SCHEMA.into(),
+                        template_id: template.template_id.clone(),
+                        revision_id: template.revision_id.clone(),
+                        authority: "domain:sandbox".into(),
+                        scope: "application:sandbox".into(),
+                        application_id: "application:sandbox".into(),
+                        binding_id: "binding:sandbox".into(),
+                        parameters: BTreeMap::new(),
+                    },
+                )?;
+                let current_workspace = PolicyWorkspaceV1 {
+                    revisions: vec![PolicyRevisionV1 {
+                        schema_version: "1".into(),
+                        policy_id: "policy:sandbox-baseline".into(),
+                        revision_id: "r1".into(),
+                        authority: "domain:sandbox".into(),
+                        scope: "application:sandbox".into(),
+                        disposition: PolicyDisposition::Stored,
+                        policy: json!({"eq":["sandbox",true]}),
+                        valid_from: None,
+                        valid_until: None,
+                        extensions: vec![],
+                    }],
+                    policy_sets: vec![],
+                    binding: ApplicationBindingV1 {
+                        schema_version: "1".into(),
+                        binding_id: "binding:sandbox".into(),
+                        application_id: "application:sandbox".into(),
+                        authority: "domain:sandbox".into(),
+                        policies: vec![PolicyReferenceV1 {
+                            policy_id: "policy:sandbox-baseline".into(),
+                            revision_id: "r1".into(),
+                            authority_rank: 100,
+                            mandatory: true,
+                            order: 1,
+                        }],
+                        policy_sets: vec![],
+                        valid_from: None,
+                        valid_until: None,
+                        extensions: vec![],
+                    },
+                    activation: None,
+                };
+                let facts = json!({"sandbox":true,"fallback_available":false});
+                let current_repository = repository_from_workspace(current_workspace.clone())
+                    .map_err(|error| error.to_string())?;
+                let proposed_repository = repository_from_workspace(rendered.workspace.clone())
+                    .map_err(|error| error.to_string())?;
+                let simulation = simulate_policy_change(
+                    current_repository
+                        .effective_policy("binding:sandbox", &facts)
+                        .map_err(|error| error.to_string())?,
+                    proposed_repository
+                        .effective_policy("binding:sandbox", &facts)
+                        .map_err(|error| error.to_string())?,
+                );
+                let impact = preview_impact(
+                    &ImpactRequestV1 {
+                        schema_version: IMPACT_SCHEMA.into(),
+                        current: current_workspace,
+                        proposed: rendered.workspace.clone(),
+                        candidates: vec![ImpactCandidateV1 {
+                            candidate_id: "candidate:sandbox".into(),
+                            facts,
+                            compatibility: CompatibilityStatus::Compatible,
+                            metrics: BTreeMap::new(),
+                        }],
+                    },
+                    now,
+                )?;
                 let friction = FrictionEvidenceV1 {
                     schema_version: FRICTION_SCHEMA.into(),
                     evidence_id: "sandbox:first-success".into(),
@@ -308,13 +422,23 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                     actor_class: "project_maintainer".into(),
                     started_at: now,
                     completed_at: now,
-                    interaction_count: 1,
-                    outcome: "proposal_created".into(),
+                    interaction_count: 5,
+                    outcome: "template_impact_simulation_and_plan_created".into(),
                     representative: false,
                     authorizes_mutation: false,
                 };
                 validate_friction(&friction)?;
-                let output = json!({"assessment":assessment,"proposal":proposal,"friction_evidence":friction,"activated":false});
+                let output = json!({
+                    "assessment":assessment,
+                    "template":template,
+                    "rendered_template":rendered,
+                    "impact":impact,
+                    "simulation":simulation,
+                    "proposal":proposal,
+                    "plan":management_plan,
+                    "friction_evidence":friction,
+                    "activated":false
+                });
                 emit(&output, true, String::new);
             }
             _ => return Err("USAGE_INVALID".into()),

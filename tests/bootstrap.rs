@@ -135,6 +135,11 @@ fn disposable_sandbox_is_machine_readable_and_non_representative() {
         value["friction_evidence"]["evidence_class"],
         "project_rehearsal"
     );
+    assert_eq!(value["friction_evidence"]["interaction_count"], 5);
+    assert_eq!(value["rendered_template"]["authorizes_activation"], false);
+    assert_eq!(value["impact"]["authorizes_mutation"], false);
+    assert_eq!(value["simulation"]["newly_denied"], true);
+    assert_eq!(value["plan"]["operations"].as_array().unwrap().len(), 1);
 }
 
 #[test]
