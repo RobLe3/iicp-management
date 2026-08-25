@@ -15,6 +15,7 @@ administrator, or product-specific operator experiences.
 | Request connector | Translation of an upstream request into bounded IICP request and policy context | Policy definition or authority expansion |
 | Integration adapter | Capability-scoped observation and application of an authorized local plan | Unbounded host control, restart authority or secret transport |
 | Adoption projection | Evidence-bound observation, recommendation and friction measurements | Trust establishment, approval or mutation authority |
+| Environment bootstrap and adoption | Preflight observations, non-authorizing recommendations, required decisions, proposals and friction evidence | Trust establishment, package installation internals, secret values or activation |
 
 ## State flow
 

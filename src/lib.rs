@@ -7,6 +7,7 @@ use thiserror::Error;
 
 pub mod adapters;
 pub mod apply_gate;
+pub mod bootstrap;
 pub mod controller;
 pub mod execution;
 pub mod ipc;

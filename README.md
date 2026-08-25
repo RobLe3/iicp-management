@@ -237,3 +237,22 @@ Externally visible effects remain part of history even after compensation.
 
 For the disposable restart and recovery rehearsal, see
 [`docs/AUTHORIZED_LOCAL_APPLY_RUNBOOK.md`](docs/AUTHORIZED_LOCAL_APPLY_RUNBOOK.md).
+
+## Portable bootstrap and diagnostics
+
+Bootstrap assessment is deliberately non-authorizing. It records fresh
+observations, recommendations and decisions that still require an operator;
+discovered components remain candidates until their evidence is verified.
+
+```bash
+iicp-management bootstrap assess assessment.json
+iicp-management doctor assessment.json controller.db adapter-inspection.json
+iicp-management bootstrap proposal assessment.json operator:local controller:local 0
+iicp-management bootstrap import desired-state.json
+iicp-management bootstrap sandbox
+```
+
+`doctor` reports `PASS`, `WARN`, `FAIL` and `NOT_AVAILABLE` from explicit local
+inputs. Import and proposal creation do not activate state. The sandbox uses
+disposable synthetic evidence and labels its friction record as a project
+rehearsal, not representative administrator evidence.

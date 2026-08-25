@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/contracts/bootstrap-assessment-v1.schema.json",
+  "title": "IICP Management Bootstrap Assessment v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "assessment_id", "environment_mode", "observed_at", "expires_at", "readiness", "authorizes_mutation", "observations", "recommendations", "required_decisions"],
+  "properties": {
+    "schema_version": { "const": "iicp.management-bootstrap-assessment.v1" },
+    "assessment_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "environment_mode": { "enum": ["public", "private", "federated_private", "local_only", "custom"] },
+    "observed_at": { "type": "integer", "minimum": 0 },
+    "expires_at": { "type": "integer", "minimum": 0 },
+    "readiness": { "enum": ["ready_for_proposal", "needs_input", "blocked"] },
+    "authorizes_mutation": { "const": false },
+    "observations": { "type": "array", "maxItems": 1024, "items": { "$ref": "#/$defs/observation" } },
+    "recommendations": { "type": "array", "maxItems": 1024, "items": { "$ref": "#/$defs/recommendation" } },
+    "required_decisions": { "type": "array", "maxItems": 1024, "items": { "$ref": "#/$defs/decision" } }
+  },
+  "$defs": {
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["observation_id", "kind", "source", "status", "observed_at", "expires_at", "details"],
+      "properties": {
+        "observation_id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "source": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["candidate", "verified", "unavailable", "failed"] },
+        "observed_at": { "type": "integer", "minimum": 0 },
+        "expires_at": { "type": "integer", "minimum": 0 },
+        "evidence_digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+        "details": {}
+      }
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource_id", "kind", "desired"],
+      "properties": {
+        "resource_id": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "desired": { "type": "object" },
+        "secret_refs": { "type": "object", "additionalProperties": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "recommendation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recommendation_id", "reason", "requires_decision_ids"],
+      "properties": {
+        "recommendation_id": { "type": "string", "minLength": 1 },
+        "reason": { "type": "string", "minLength": 1 },
+        "resource": { "$ref": "#/$defs/resource" },
+        "requires_decision_ids": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      }
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_id", "prompt", "security_sensitive"],
+      "properties": {
+        "decision_id": { "type": "string", "minLength": 1 },
+        "prompt": { "type": "string", "minLength": 1 },
+        "security_sensitive": { "type": "boolean" }
+      }
+    }
+  }
+}
