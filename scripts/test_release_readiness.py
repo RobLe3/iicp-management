@@ -14,6 +14,12 @@ class ReleaseLaneContract(unittest.TestCase):
         self.assertIn('cargo package --locked',self.text); self.assertGreaterEqual(self.text.count('cargo install --'),2)
         self.assertGreaterEqual(self.text.count('--locked --path'),2)
         self.assertNotRegex(self.text,r'cargo install(?![^\n]*--locked)')
+        self.assertIn('online-cargo-home', self.text)
+    def test_packaged_diagnostic_contract_is_exercised(self):
+        for value in ('contracts/diagnostic-bundle-v1.schema.json', 'fixtures/diagnostic-bundle-conformance-v1.json', 'docs/ADR-009-diagnostic-bundles-are-minimized-evidence.md', 'docs/DIAGNOSTIC_BUNDLE_WORKFLOW.md'):
+            self.assertIn(value, self.text)
+        self.assertIn('diagnostics verify', self.text)
+        self.assertIn('diagnostics show', self.text)
     def test_refuses_existing_release_tag_and_never_publishes(self):
         self.assertIn('git ls-remote --exit-code --tags',self.text)
         self.assertNotIn('cargo publish',self.text); self.assertNotIn('gh release create',self.text)

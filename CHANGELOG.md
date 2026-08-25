@@ -5,7 +5,14 @@ fixtures retain their own explicit schema and profile generations.
 
 ## Unreleased
 
+## 0.2.0 — 2026-08-25 developer preview
+
 - Portable, content-minimized diagnostic bundle creation, verification and operator inspection.
+
+The diagnostic bundle is a non-authorizing projection of explicit local
+evidence. It does not contain raw policy, desired state, prompts, responses,
+credentials, request or target identifiers, or private topology. Publication
+does not deploy a management service or establish representative adoption.
 
 ## 0.1.0 — 2026-08-25 developer preview
 

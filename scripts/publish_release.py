@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 PACKAGE = "iicp-management-core"
-EXPECTED_VERSION = "0.1.0"
+EXPECTED_VERSION = "0.2.0"
 REPOSITORY = "RobLe3/iicp-management"
 
 
@@ -220,6 +220,8 @@ def preflight(root: Path) -> tuple[str, str, bool, bool, bool]:
     version = package_version(root)
     if version != EXPECTED_VERSION:
         raise ReleaseError("RELEASE_VERSION_UNEXPECTED")
+    if not (root / "docs" / f"RELEASE_NOTES_{version}.md").is_file():
+        raise ReleaseError("RELEASE_NOTES_MISSING")
     tag = f"v{version}"
     local_tag = bool(run(["git", "tag", "--list", tag], root=root, capture=True))
     if local_tag and run(["git", "rev-list", "-n", "1", tag], root=root, capture=True) != head:
@@ -291,7 +293,7 @@ def execute(root: Path, confirmation: str) -> None:
                 "gh", "release", "create", f"v{version}", str(crate), str(offline), str(manifest),
                 "--repo", REPOSITORY, "--verify-tag", "--prerelease",
                 "--title", f"IICP Management Foundation {version} developer preview",
-                "--notes-file", str(root / "docs" / "RELEASE_NOTES_0.1.0.md"),
+                "--notes-file", str(root / "docs" / f"RELEASE_NOTES_{version}.md"),
             ],
             root=root,
         )

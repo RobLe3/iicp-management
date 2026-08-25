@@ -55,16 +55,16 @@ class PublicationStateTests(unittest.TestCase):
             planned_actions(ReleaseState(True, False, False, True, True))
 
     @patch("publish_release.crate_published", return_value=False)
-    @patch("publish_release.preflight", return_value=("a" * 40, "0.1.0", False, False, False))
+    @patch("publish_release.preflight", return_value=("a" * 40, "0.2.0", False, False, False))
     def test_missing_credential_fails_before_readiness(self, _preflight, _published):
         with tempfile.TemporaryDirectory() as directory:
             with patch.dict(os.environ, {"HOME": directory}, clear=True), patch(
                 "publish_release.Path.home", return_value=Path(directory)
             ):
                 with self.assertRaisesRegex(ReleaseError, "CARGO_REGISTRY_CREDENTIAL_REQUIRED"):
-                    execute(Path("."), "0.1.0")
+                    execute(Path("."), "0.2.0")
 
-    @patch("publish_release.preflight", return_value=("a" * 40, "0.1.0", False, False, False))
+    @patch("publish_release.preflight", return_value=("a" * 40, "0.2.0", False, False, False))
     def test_confirmation_must_match_exact_version(self, _preflight):
         with self.assertRaisesRegex(ReleaseError, "RELEASE_CONFIRMATION_MISMATCH"):
             execute(Path("."), "latest")
@@ -74,6 +74,8 @@ class PublicationStateTests(unittest.TestCase):
         self.assertIn('["cargo", "publish", "--locked"]', text)
         self.assertNotIn('"--token"', text)
         self.assertIn("CARGO_REGISTRY_CREDENTIAL_REQUIRED", text)
+        self.assertIn("RELEASE_NOTES_MISSING", text)
+        self.assertIn('f"RELEASE_NOTES_{version}.md"', text)
 
     def test_owner_only_cargo_login_file_is_accepted_without_reading_it(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -92,7 +94,7 @@ class PublicationStateTests(unittest.TestCase):
     @patch("publish_release.sha256", return_value="sha256:" + "a" * 64)
     def test_registry_and_readiness_crate_must_match(self, _sha, _checksum):
         with self.assertRaisesRegex(ReleaseError, "REGISTRY_CRATE_DIGEST_MISMATCH"):
-            verify_registry_checksum("0.1.0", Path("unused"))
+            verify_registry_checksum("0.2.0", Path("unused"))
 
     def test_remote_release_binds_all_three_assets_and_registry(self):
         crate_digest = "sha256:" + "a" * 64
@@ -100,7 +102,7 @@ class PublicationStateTests(unittest.TestCase):
         manifest_digest = "sha256:" + "c" * 64
         manifest = {
             "commit": "d" * 40,
-            "version": "0.1.0",
+            "version": "0.2.0",
             "authorizes_publication": False,
             "authorizes_deployment": False,
             "artifacts": {
@@ -109,18 +111,18 @@ class PublicationStateTests(unittest.TestCase):
             },
         }
         release = {
-            "tagName": "v0.1.0",
+            "tagName": "v0.2.0",
             "isPrerelease": True,
             "assets": [
-                {"name": "iicp-management-core-0.1.0.crate", "digest": crate_digest},
-                {"name": "iicp-management-core-0.1.0-offline.tar.gz", "digest": offline_digest},
+                {"name": "iicp-management-core-0.2.0.crate", "digest": crate_digest},
+                {"name": "iicp-management-core-0.2.0-offline.tar.gz", "digest": offline_digest},
                 {"name": "release-manifest.json", "digest": manifest_digest},
             ],
         }
-        validate_remote_release(release, manifest, manifest_digest, "d" * 40, "0.1.0", "a" * 64)
+        validate_remote_release(release, manifest, manifest_digest, "d" * 40, "0.2.0", "a" * 64)
         release["assets"][0]["digest"] = "sha256:" + "e" * 64
         with self.assertRaisesRegex(ReleaseError, "REMOTE_RELEASE_ASSET_DIGEST_MISMATCH"):
-            validate_remote_release(release, manifest, manifest_digest, "d" * 40, "0.1.0", "a" * 64)
+            validate_remote_release(release, manifest, manifest_digest, "d" * 40, "0.2.0", "a" * 64)
 
 
 if __name__ == "__main__":

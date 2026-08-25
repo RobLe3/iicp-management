@@ -43,10 +43,10 @@ crate="$ROOT/target/package/iicp-management-core-$version.crate"
 [[ -f "$crate" ]] || fail "packaged crate not found"
 listing="$cleanup_dir/package.list"
 tar -tzf "$crate" >"$listing"
-for required in Cargo.lock Cargo.toml README.md COMPATIBILITY.md CHANGELOG.md CONFORMANCE.md LICENSE; do
+for required in Cargo.lock Cargo.toml README.md COMPATIBILITY.md CHANGELOG.md CONFORMANCE.md LICENSE "docs/RELEASE_NOTES_$version.md"; do
   grep -Eq "/${required}$" "$listing" || fail "package is missing $required"
 done
-for required in contracts/management-profile-v1.schema.json fixtures/management-profile-conformance-v1.json examples/finance/management-profile.json docs/ADR-008-single-crate-developer-preview-release.md; do
+for required in contracts/management-profile-v1.schema.json fixtures/management-profile-conformance-v1.json examples/finance/management-profile.json docs/ADR-008-single-crate-developer-preview-release.md contracts/diagnostic-bundle-v1.schema.json fixtures/diagnostic-bundle-conformance-v1.json docs/ADR-009-diagnostic-bundles-are-minimized-evidence.md docs/DIAGNOSTIC_BUNDLE_WORKFLOW.md; do
   grep -Eq "/${required}$" "$listing" || fail "package is missing $required"
 done
 
@@ -55,11 +55,20 @@ mkdir -p "$source_root"
 tar -xzf "$crate" -C "$source_root"
 source_dir="$source_root/iicp-management-core-$version"
 install_root="$cleanup_dir/install"
-cargo install --locked --path "$source_dir" --root "$install_root"
+CARGO_HOME="$cleanup_dir/online-cargo-home" cargo install --locked --path "$source_dir" --root "$install_root"
 "$install_root/bin/iicp-management" --json profile verify "$source_dir/examples/finance/management-profile.json" >/dev/null
 "$install_root/bin/iicp-management" --json profile intersect "$source_dir/examples/finance/management-profile.json" "$source_dir/examples/finance/management-profile-requirement.json" >/dev/null
 "$install_root/bin/iicp-management" --json plan "$source_dir/examples/finance/desired-state.json" "$source_dir/examples/finance/accepted-state.json" >/dev/null
-"$install_root/bin/iicp-management" bootstrap sandbox >/dev/null
+sandbox="$cleanup_dir/sandbox.json"
+diagnostic="$cleanup_dir/diagnostic.json"
+"$install_root/bin/iicp-management" bootstrap sandbox >"$sandbox"
+python3 - "$sandbox" "$diagnostic" <<'PY'
+import json,sys
+value=json.load(open(sys.argv[1],encoding="utf-8"))
+json.dump(value["diagnostic_bundle"],open(sys.argv[2],"w",encoding="utf-8"),indent=2,sort_keys=True)
+PY
+"$install_root/bin/iicp-management" diagnostics verify "$diagnostic" >/dev/null
+"$install_root/bin/iicp-management" diagnostics show "$diagnostic" >/dev/null
 "$install_root/bin/iicp-management-conformance" >/dev/null
 set +e
 controller_help="$($install_root/bin/iicp-management-controller 2>&1)"; controller_status=$?

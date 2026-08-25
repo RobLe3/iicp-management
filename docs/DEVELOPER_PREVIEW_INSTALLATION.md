@@ -1,4 +1,4 @@
-# Management Foundation 0.1 developer preview
+# Management Foundation 0.2 developer preview
 
 This preview is for local evaluation of the public IICP management contracts,
 planner, controller and conformance runner. It does not install a remote
@@ -34,12 +34,12 @@ After a reviewed release is published, install the exact version with its
 published lockfile:
 
 ```bash
-cargo install iicp-management-core --version 0.1.0 --locked
+cargo install iicp-management-core --version 0.2.0 --locked
 ```
 
 Do not remove `--locked` if installation fails. A locked failure means the
 approved dependency graph could not be reproduced and should be investigated.
-The 0.1 readiness process tests the packaged `.crate`; it does not authorize
+The 0.2 readiness process tests the packaged `.crate`; it does not authorize
 publication by itself.
 
 ## Offline bundle
@@ -50,8 +50,8 @@ the packaged source and vendored dependencies. Transfer both the bundle and
 the extracted directory:
 
 ```bash
-tar -xzf iicp-management-core-0.1.0-offline.tar.gz
-cd iicp-management-core-0.1.0
+tar -xzf iicp-management-core-0.2.0-offline.tar.gz
+cd iicp-management-core-0.2.0
 CARGO_HOME="$(mktemp -d)" cargo install --offline --locked --path .
 iicp-management-conformance
 ```
