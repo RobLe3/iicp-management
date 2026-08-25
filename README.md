@@ -307,6 +307,36 @@ iicp-management bootstrap import desired-state.json
 iicp-management bootstrap sandbox
 ```
 
+### End-to-end local evaluation
+
+The authorized sandbox exercises the full local management path without
+contacting a directory, changing a system service, or activating external
+state:
+
+```bash
+iicp-management bootstrap sandbox --exercise authorized-local
+```
+
+It assesses a disposable environment, previews the change, binds an exact
+authorization to the plan, applies it through the in-memory synthetic adapter,
+verifies the observed result, and records bounded evidence. The result is a
+project rehearsal, not representative deployment evidence.
+
+Failure and restart behavior can be inspected deterministically:
+
+```bash
+iicp-management bootstrap sandbox --exercise authorized-local \
+  --scenario verification-failure
+iicp-management bootstrap sandbox --exercise authorized-local \
+  --scenario interrupted-resume
+```
+
+Use `--json` for the stable machine-readable projection. None of these commands
+authorizes a real target, and an uncertain result is never retried
+automatically. See
+[`docs/LOCAL_MANAGEMENT_EVALUATION.md`](docs/LOCAL_MANAGEMENT_EVALUATION.md) for
+the clean-install and evidence guide.
+
 `doctor` reports `PASS`, `WARN`, `FAIL` and `NOT_AVAILABLE` from explicit local
 inputs. Import and proposal creation do not activate state. The sandbox uses
 disposable synthetic evidence and labels its friction record as a project

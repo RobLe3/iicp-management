@@ -18,6 +18,7 @@ pub mod progressive_authority;
 pub mod reconciliation;
 pub mod recovery;
 pub mod rollout;
+pub mod sandbox;
 pub mod templates;
 
 pub const CONTRACT_VERSION: &str = "1";

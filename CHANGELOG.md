@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0-rc.1 — 2026-08-25
+
+- Adds a one-command, authorized local management exercise with bounded
+  project-rehearsal evidence.
+- Adds deterministic verification-failure and interrupted-resume scenarios;
+  uncertain mutations are never retried automatically.
+- Documents clean and offline local installation without publishing or
+  deploying the candidate.
+
 This project follows semantic versioning for published packages. Contracts and
 fixtures retain their own explicit schema and profile generations.
 
