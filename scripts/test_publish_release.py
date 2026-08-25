@@ -6,7 +6,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from publish_release import ReleaseError, ReleaseState, execute, planned_actions, verify_registry_checksum
+from publish_release import (
+    ReleaseError,
+    ReleaseState,
+    execute,
+    planned_actions,
+    validate_remote_release,
+    verify_registry_checksum,
+)
 
 
 class PublicationStateTests(unittest.TestCase):
@@ -68,6 +75,34 @@ class PublicationStateTests(unittest.TestCase):
     def test_registry_and_readiness_crate_must_match(self, _sha, _checksum):
         with self.assertRaisesRegex(ReleaseError, "REGISTRY_CRATE_DIGEST_MISMATCH"):
             verify_registry_checksum("0.1.0", Path("unused"))
+
+    def test_remote_release_binds_all_three_assets_and_registry(self):
+        crate_digest = "sha256:" + "a" * 64
+        offline_digest = "sha256:" + "b" * 64
+        manifest_digest = "sha256:" + "c" * 64
+        manifest = {
+            "commit": "d" * 40,
+            "version": "0.1.0",
+            "authorizes_publication": False,
+            "authorizes_deployment": False,
+            "artifacts": {
+                "crate": {"sha256": crate_digest},
+                "offline_bundle": {"sha256": offline_digest},
+            },
+        }
+        release = {
+            "tagName": "v0.1.0",
+            "isPrerelease": True,
+            "assets": [
+                {"name": "iicp-management-core-0.1.0.crate", "digest": crate_digest},
+                {"name": "iicp-management-core-0.1.0-offline.tar.gz", "digest": offline_digest},
+                {"name": "release-manifest.json", "digest": manifest_digest},
+            ],
+        }
+        validate_remote_release(release, manifest, manifest_digest, "d" * 40, "0.1.0", "a" * 64)
+        release["assets"][0]["digest"] = "sha256:" + "e" * 64
+        with self.assertRaisesRegex(ReleaseError, "REMOTE_RELEASE_ASSET_DIGEST_MISMATCH"):
+            validate_remote_release(release, manifest, manifest_digest, "d" * 40, "0.1.0", "a" * 64)
 
 
 if __name__ == "__main__":
