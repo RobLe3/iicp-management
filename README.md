@@ -385,6 +385,8 @@ Create a portable support record from the same validated inputs:
 
 ```bash
 iicp-management diagnostics create assessment.json --controller controller.db --adapter adapter-inspection.json --profile management-profile.json --output diagnostic.json
+# Add both runtime flags to emit the backward-compatible v2 extension:
+iicp-management diagnostics create assessment.json --runtime-health runtime-health.json --runtime-target node:local --output runtime-diagnostic.json
 iicp-management diagnostics show diagnostic.json
 iicp-management diagnostics verify diagnostic.json
 ```

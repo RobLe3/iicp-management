@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0 — 2026-08-25 developer preview
+
+- Add diagnostic bundle v2 with content-minimized runtime-health evidence while preserving v1.
+- Extend diagnostic creation, verification, display and shell completion with explicit runtime inputs.
+- Bind runtime freshness, state counts and truthful readiness outcomes without target identity or mutation authority.
+
 ## 0.7.0 — 2026-08-25 developer preview
 
 - Add a content-minimized, freshness-bounded projection of local Rust node runtime-health v1 evidence.

@@ -12,7 +12,9 @@ use iicp_management_core::controller::{
     DecisionState, LocalPlanSubmissionV1,
 };
 use iicp_management_core::diagnostics::{
-    create_diagnostic_bundle, validate_diagnostic_bundle, DiagnosticBundleV1,
+    create_diagnostic_bundle, create_diagnostic_bundle_v2, validate_diagnostic_bundle,
+    validate_diagnostic_bundle_v2, DiagnosticBundleV1, DiagnosticBundleV2, DIAGNOSTIC_SCHEMA,
+    DIAGNOSTIC_SCHEMA_V2,
 };
 use iicp_management_core::execution::{LocalApplyExecutionV1, EXECUTION_SCHEMA};
 use iicp_management_core::ipc::{
@@ -211,7 +213,7 @@ bootstrap proposal <assessment.json> <issuer> <audience> <generation>\n\
 bootstrap import <desired-state.json>\n\
 bootstrap sandbox [--exercise authorized-local] [--scenario success|verification-failure|interrupted-resume]\n\
 doctor <assessment.json> [controller.db] [adapter-inspection.json] [profile.json] [requirement.json]\n\
-diagnostics create <assessment.json> --output <bundle.json> [--controller <controller.db>] [--adapter <adapter-inspection.json>] [--profile <profile.json>] [--requirement <requirement.json>] [--rollout-status <status.json>]\n\
+diagnostics create <assessment.json> --output <bundle.json> [--controller <controller.db>] [--adapter <adapter-inspection.json>] [--profile <profile.json>] [--requirement <requirement.json>] [--rollout-status <status.json>] [--runtime-health <runtime-health.json|-> --runtime-target <target>]\n\
 diagnostics <verify|show> <bundle.json>\n\
 profile <show|verify> <profile.json>\n\
 profile intersect <profile.json> <requirement.json>\n\
@@ -1043,6 +1045,8 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                             | "--profile"
                             | "--requirement"
                             | "--rollout-status"
+                            | "--runtime-health"
+                            | "--runtime-target"
                     ) || paths.insert(flag.clone(), value.clone()).is_some()
                     {
                         return Err("USAGE_INVALID".into());
@@ -1071,6 +1075,33 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                     .get("--rollout-status")
                     .map(|path| read::<ConvergenceStatusV1>(path))
                     .transpose()?;
+                let runtime_flags = (paths.get("--runtime-health"), paths.get("--runtime-target"));
+                if let (Some(path), Some(target)) = runtime_flags {
+                    let bytes = read_runtime_health(path)?;
+                    let snapshot = parse_runtime_health(&bytes)?;
+                    let runtime = project_runtime_health(&snapshot, target, Controller::now())?;
+                    let output = create_diagnostic_bundle_v2(
+                        &assessment,
+                        controller.as_ref(),
+                        adapter.as_ref(),
+                        profile.as_ref(),
+                        requirement.as_ref(),
+                        rollout.as_ref(),
+                        &runtime,
+                        Controller::now(),
+                    )?;
+                    write_private_json(output_path, &output)?;
+                    let overall = output.base.overall.clone();
+                    let actions = output.base.safe_next_actions.len();
+                    emit(&output, json_output, || {
+                        format!(
+                        "Diagnostic bundle: {overall:?}\nSafe next actions: {actions}\nWritten: {output_path}"
+                    )
+                    });
+                    return Ok(());
+                } else if runtime_flags.0.is_some() || runtime_flags.1.is_some() {
+                    return Err("USAGE_INVALID".into());
+                }
                 let output = create_diagnostic_bundle(
                     &assessment,
                     controller.as_ref(),
@@ -1091,25 +1122,59 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
             }
             Some("verify") => {
                 let a = require(&args[2..], 1)?;
-                let output: DiagnosticBundleV1 = read(&a[0])?;
-                validate_diagnostic_bundle(&output, Controller::now())?;
-                let digest = output.payload_digest.clone();
-                emit(&output, json_output, || {
-                    format!("Diagnostic bundle valid: {digest}")
-                });
+                let raw: serde_json::Value = read(&a[0])?;
+                match raw.get("schema_version").and_then(|value| value.as_str()) {
+                    Some(DIAGNOSTIC_SCHEMA) => {
+                        let output: DiagnosticBundleV1 =
+                            serde_json::from_value(raw).map_err(|_| "DIAGNOSTIC_BUNDLE_INVALID")?;
+                        validate_diagnostic_bundle(&output, Controller::now())?;
+                        let digest = output.payload_digest.clone();
+                        emit(&output, json_output, || {
+                            format!("Diagnostic bundle valid: {digest}")
+                        });
+                    }
+                    Some(DIAGNOSTIC_SCHEMA_V2) => {
+                        let output: DiagnosticBundleV2 =
+                            serde_json::from_value(raw).map_err(|_| "DIAGNOSTIC_BUNDLE_INVALID")?;
+                        validate_diagnostic_bundle_v2(&output, Controller::now())?;
+                        let digest = output.base.payload_digest.clone();
+                        emit(&output, json_output, || {
+                            format!("Diagnostic bundle valid: {digest}")
+                        });
+                    }
+                    _ => return Err("DIAGNOSTIC_SCHEMA_UNSUPPORTED".into()),
+                }
             }
             Some("show") => {
                 let a = require(&args[2..], 1)?;
-                let output: DiagnosticBundleV1 = read(&a[0])?;
-                validate_diagnostic_bundle(&output, Controller::now())?;
-                let overall = output.overall.clone();
-                let degraded = output
-                    .checks
+                let output: serde_json::Value = read(&a[0])?;
+                let (overall, checks, actions) = match output
+                    .get("schema_version")
+                    .and_then(|value| value.as_str())
+                {
+                    Some(DIAGNOSTIC_SCHEMA) => {
+                        let value: DiagnosticBundleV1 = serde_json::from_value(output.clone())
+                            .map_err(|_| "DIAGNOSTIC_BUNDLE_INVALID")?;
+                        validate_diagnostic_bundle(&value, Controller::now())?;
+                        (value.overall, value.checks, value.safe_next_actions)
+                    }
+                    Some(DIAGNOSTIC_SCHEMA_V2) => {
+                        let value: DiagnosticBundleV2 = serde_json::from_value(output.clone())
+                            .map_err(|_| "DIAGNOSTIC_BUNDLE_INVALID")?;
+                        validate_diagnostic_bundle_v2(&value, Controller::now())?;
+                        (
+                            value.base.overall,
+                            value.base.checks,
+                            value.base.safe_next_actions,
+                        )
+                    }
+                    _ => return Err("DIAGNOSTIC_SCHEMA_UNSUPPORTED".into()),
+                };
+                let degraded = checks
                     .iter()
                     .filter(|check| check.state != CheckState::Pass)
                     .map(|check| format!("{}: {}", check.check_id, check.reason_code))
                     .collect::<Vec<_>>();
-                let actions = output.safe_next_actions.clone();
                 emit(&output, json_output, || {
                     format!(
                         "Overall: {overall:?}\nFindings:\n{}\nSafe next actions:\n{}",

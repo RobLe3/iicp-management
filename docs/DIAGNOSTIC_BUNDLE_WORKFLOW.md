@@ -31,3 +31,16 @@ The brief view shows the overall state, the evidence condition behind each warni
 The bundle contains counts, states, reason codes and digests. It omits raw policies, desired configuration, prompts, responses, credentials, request and target identifiers, and private topology. Review the bundle before sending it outside its administrative domain: even minimized operational evidence may reveal component versions, timing and aggregate state.
 
 `payload_digest` detects modification; it is not a signature. A bundle cannot authorize apply, recovery, rollout, reconciliation or any other mutation, and it is not proof that a remote target converged. Source receipts retain their own authority and evidentiary meaning.
+
+## Runtime-aware bundle (v2)
+
+Provide both runtime flags to bind a local runtime-health snapshot into a minimized version 2 bundle:
+
+```bash
+iicp-management diagnostics create assessment.json \
+  --runtime-health runtime-health.json \
+  --runtime-target node:local \
+  --output diagnostic.json
+```
+
+Use `-` for bounded stdin input. Omitting both runtime flags retains the historical version 1 output. Supplying only one flag fails closed. The target is used only while projecting the source snapshot and is not retained in the diagnostic bundle.
