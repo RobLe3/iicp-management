@@ -8,6 +8,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import tomllib
 import urllib.error
@@ -102,6 +103,19 @@ def verify_registry_checksum(version: str, crate: Path) -> None:
         raise ReleaseError("REGISTRY_CRATE_DIGEST_MISMATCH")
 
 
+def artifact_paths(root: Path, version: str) -> tuple[Path, Path, Path]:
+    output = root / "target" / "release-readiness"
+    return (
+        output / f"{PACKAGE}-{version}.crate",
+        output / f"{PACKAGE}-{version}-offline.tar.gz",
+        output / "release-manifest.json",
+    )
+
+
+def artifacts_ready(root: Path, version: str) -> bool:
+    return all(path.is_file() for path in artifact_paths(root, version))
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -111,10 +125,7 @@ def sha256(path: Path) -> str:
 
 
 def verify_artifacts(root: Path, head: str, version: str) -> tuple[Path, Path, Path]:
-    output = root / "target" / "release-readiness"
-    manifest_path = output / "release-manifest.json"
-    crate = output / f"{PACKAGE}-{version}.crate"
-    offline = output / f"{PACKAGE}-{version}-offline.tar.gz"
+    crate, offline, manifest_path = artifact_paths(root, version)
     if not all(path.is_file() for path in (manifest_path, crate, offline)):
         raise ReleaseError("RELEASE_ARTIFACT_MISSING")
     manifest = json.loads(manifest_path.read_text())
@@ -129,6 +140,60 @@ def verify_artifacts(root: Path, head: str, version: str) -> tuple[Path, Path, P
     if any(sha256(path) != digest for digest, path in expected.items()):
         raise ReleaseError("RELEASE_ARTIFACT_DIGEST_MISMATCH")
     return crate, offline, manifest_path
+
+
+def validate_remote_release(
+    release: dict, manifest: dict, manifest_digest: str, head: str, version: str, registry_digest: str
+) -> None:
+    if release.get("tagName") != f"v{version}" or release.get("isPrerelease") is not True:
+        raise ReleaseError("REMOTE_RELEASE_IDENTITY_INVALID")
+    if manifest.get("commit") != head or manifest.get("version") != version:
+        raise ReleaseError("REMOTE_MANIFEST_IDENTITY_MISMATCH")
+    if manifest.get("authorizes_publication") is not False or manifest.get("authorizes_deployment") is not False:
+        raise ReleaseError("REMOTE_MANIFEST_AUTHORITY_INVALID")
+    expected = {
+        f"{PACKAGE}-{version}.crate": manifest["artifacts"]["crate"]["sha256"],
+        f"{PACKAGE}-{version}-offline.tar.gz": manifest["artifacts"]["offline_bundle"]["sha256"],
+        "release-manifest.json": manifest_digest,
+    }
+    actual = {asset.get("name"): asset.get("digest") for asset in release.get("assets", [])}
+    if actual != expected:
+        raise ReleaseError("REMOTE_RELEASE_ASSET_DIGEST_MISMATCH")
+    if registry_digest != expected[f"{PACKAGE}-{version}.crate"].removeprefix("sha256:"):
+        raise ReleaseError("REMOTE_REGISTRY_DIGEST_MISMATCH")
+
+
+def verify_remote_release(root: Path, head: str, version: str) -> None:
+    release = json.loads(
+        run(
+            ["gh", "release", "view", f"v{version}", "--repo", REPOSITORY, "--json", "tagName,isPrerelease,assets"],
+            root=root,
+            capture=True,
+        )
+    )
+    local_manifest = artifact_paths(root, version)[2]
+    if local_manifest.is_file():
+        manifest_path = local_manifest
+        temporary = None
+    else:
+        temporary = tempfile.TemporaryDirectory()
+        run(
+            [
+                "gh", "release", "download", f"v{version}", "--repo", REPOSITORY,
+                "--pattern", "release-manifest.json", "--dir", temporary.name,
+            ],
+            root=root,
+        )
+        manifest_path = Path(temporary.name) / "release-manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text())
+        checksum = registry_checksum(version)
+        if checksum is None:
+            raise ReleaseError("REGISTRY_VERSION_MISSING")
+        validate_remote_release(release, manifest, sha256(manifest_path), head, version, checksum)
+    finally:
+        if temporary is not None:
+            temporary.cleanup()
 
 
 def preflight(root: Path) -> tuple[str, str, bool, bool, bool]:
@@ -181,22 +246,14 @@ def execute(root: Path, confirmation: str) -> None:
     if confirmation != version:
         raise ReleaseError("RELEASE_CONFIRMATION_MISMATCH")
     published = crate_published(version)
-    output = root / "target" / "release-readiness"
-    artifacts_ready = all(
-        path.is_file()
-        for path in (
-            output / "release-manifest.json",
-            output / f"{PACKAGE}-{version}.crate",
-            output / f"{PACKAGE}-{version}-offline.tar.gz",
-        )
-    )
-    state = ReleaseState(published, local_tag_exists, remote_tag_exists, release_exists, artifacts_ready)
+    local_artifacts_ready = artifacts_ready(root, version)
+    state = ReleaseState(published, local_tag_exists, remote_tag_exists, release_exists, local_artifacts_ready)
     actions = planned_actions(state)
     print("release actions: " + ", ".join(actions))
 
     if actions == ["verify"]:
         wait_for_registry(version)
-        run(["gh", "release", "view", f"v{version}", "--repo", REPOSITORY], root=root)
+        verify_remote_release(root, head, version)
         print(f"release publication verified: {PACKAGE} {version} at {head}")
         return
 
@@ -226,7 +283,7 @@ def execute(root: Path, confirmation: str) -> None:
             root=root,
         )
     wait_for_registry(version)
-    run(["gh", "release", "view", f"v{version}", "--repo", REPOSITORY], root=root)
+    verify_remote_release(root, head, version)
     print(f"release publication verified: {PACKAGE} {version} at {head}")
 
 
@@ -241,7 +298,9 @@ def main() -> int:
             execute(root, args.confirm_version)
         else:
             head, version, local_tag, remote_tag, release = preflight(root)
-            state = ReleaseState(crate_published(version), local_tag, remote_tag, release, False)
+            state = ReleaseState(
+                crate_published(version), local_tag, remote_tag, release, artifacts_ready(root, version)
+            )
             print(json.dumps({"head": head, "version": version, "state": state.__dict__}, sort_keys=True))
     except (ReleaseError, subprocess.CalledProcessError, json.JSONDecodeError, KeyError) as exc:
         print(f"release publication failed: {exc}", file=sys.stderr)
