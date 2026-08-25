@@ -996,3 +996,5 @@ fn policy_result(
         evaluator_profile: POLICY_PROFILE.to_string(),
     }
 }
+
+pub mod completion;
