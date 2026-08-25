@@ -174,6 +174,10 @@ The rollout contract coordinates exact local apply gates across an immutable tar
 
 See [the staged rollout runbook](docs/STAGED_ROLLOUT_RUNBOOK.md) and [ADR-005](docs/ADR-005-staged-rollout-coordination-is-non-authorizing.md). No production deployment is included.
 
+## Drift detection and bounded reconciliation
+
+Terminal rollouts can import fresh adapter-inspection evidence and compare it with the last verified target receipt. Detection is non-authorizing, missing evidence remains unknown, and only explicitly classified safe metadata or capability/runtime drift can produce a bounded proposal. Execution still requires a fresh exact local apply gate. See [the runbook](docs/DRIFT_AND_RECONCILIATION_RUNBOOK.md) and [ADR-006](docs/ADR-006-drift-detection-default-reconciliation-bounded.md).
+
 ## Authority boundary
 
 The contracts do not grant management authority. A future domain-local
