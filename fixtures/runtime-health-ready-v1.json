@@ -1,0 +1,17 @@
+{
+  "health_schema_version": 1,
+  "process_epoch": "fixture-process-epoch",
+  "pid": 4242,
+  "sequence": 8,
+  "emitted_at": "2026-08-25T10:00:00Z",
+  "lifecycle": "running",
+  "liveness": "live",
+  "readiness": "ready",
+  "progress": {
+    "runtime": {"sequence": 8, "age_ms": 0, "stale_after_ms": 30000, "required": true},
+    "supervisor": {"sequence": 8, "age_ms": 0, "stale_after_ms": 60000, "required": false}
+  },
+  "subsystems": {"provider": "healthy", "routing": "healthy"},
+  "external_connectivity": {"directory": "healthy"},
+  "reason_codes": []
+}

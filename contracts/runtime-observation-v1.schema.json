@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/contracts/runtime-observation-v1.schema.json",
+  "title": "IICP management runtime observation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version","target_id","evidence_source","source_digest","observed_at","expires_at","evidence_state","reported_lifecycle","reported_liveness","reported_readiness","effective_state","reason_codes","subsystems","external_connectivity","authorizes_mutation"],
+  "properties": {
+    "schema_version": {"const": "iicp.management-runtime-observation.v1"},
+    "target_id": {"type":"string","minLength":1,"maxLength":256},
+    "evidence_source": {"const":"iicp.runtime-health.v1"},
+    "source_digest": {"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},
+    "observed_at": {"type":"string","format":"date-time"},
+    "expires_at": {"type":"string","format":"date-time"},
+    "evidence_state": {"enum":["current","stale"]},
+    "reported_lifecycle": {"enum":["starting","running","stopping"]},
+    "reported_liveness": {"enum":["starting","live","not_live","indeterminate"]},
+    "reported_readiness": {"enum":["ready","degraded","not_ready"]},
+    "effective_state": {"enum":["ready","degraded","not_ready","unknown"]},
+    "reason_codes": {"type":"array","maxItems":128,"uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "subsystems": {"$ref":"#/$defs/subsystemMap"},
+    "external_connectivity": {"$ref":"#/$defs/subsystemMap"},
+    "authorizes_mutation": {"const":false}
+  },
+  "$defs": {
+    "subsystemMap": {
+      "type":"object","maxProperties":128,
+      "propertyNames":{"minLength":1,"maxLength":128},
+      "additionalProperties":{"enum":["healthy","degraded","recovering","unavailable","not_applicable","unknown"]}
+    }
+  }
+}

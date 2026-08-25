@@ -1,0 +1,12 @@
+{
+  "schema":"iicp.management-runtime-observation.cases.v1",
+  "version":"1",
+  "evidence_class":"project-verified",
+  "cases":[
+    {"id":"RO1-READY","stale":false,"liveness":"live","readiness":"ready","expected":{"effective_state":"ready","reason_code":null}},
+    {"id":"RO1-DEGRADED","stale":false,"liveness":"live","readiness":"degraded","expected":{"effective_state":"degraded","reason_code":null}},
+    {"id":"RO1-NOT-LIVE","stale":false,"liveness":"not_live","readiness":"ready","expected":{"effective_state":"not_ready","reason_code":null}},
+    {"id":"RO1-INDETERMINATE","stale":false,"liveness":"indeterminate","readiness":"ready","expected":{"effective_state":"unknown","reason_code":null}},
+    {"id":"RO1-STALE","stale":true,"liveness":"live","readiness":"ready","expected":{"effective_state":"unknown","reason_code":"IICP-MGMT-RUNTIME-EVIDENCE-STALE"}}
+  ]
+}
