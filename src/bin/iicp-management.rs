@@ -1,5 +1,11 @@
 use iicp_management_core::adapters::{validate_adapter_inspection, AdapterInspectionV1};
 use iicp_management_core::apply_gate::{preview_apply, LocalApplyGateV1};
+use iicp_management_core::bootstrap::{
+    create_proposal, doctor, validate_assessment, validate_friction, validate_import,
+    AssessmentReadiness, BootstrapAssessmentV1, BootstrapRecommendationV1, CheckState,
+    EnvironmentMode, EnvironmentObservationV1, FrictionEvidenceV1, ObservationStatus,
+    BOOTSTRAP_SCHEMA, FRICTION_SCHEMA,
+};
 use iicp_management_core::controller::{
     attach_adapter_inspection, inspect_controller_database, validate_plan_submission, Controller,
     DecisionState, LocalPlanSubmissionV1,
@@ -73,7 +79,7 @@ fn emit<T: Serialize>(value: &T, json_output: bool, summary: impl FnOnce() -> St
 }
 
 fn usage() -> &'static str {
-    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|controller|evidence> ...\n\
+    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|bootstrap|doctor|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|controller|evidence> ...\n\
 validate <bundle.json>\nplan <bundle.json> <accepted.json>\ndiff <plan.json>\nsimulate <current-workspace.json> <proposed-workspace.json> <facts.json> <binding-id>\n\
 show <stored-policies|active-policies|effective-policy> <workspace.json> [facts.json] [binding-id]\n\
 explain decision <workspace.json> <facts.json> <binding-id> <intent> <decision-id>\n\
@@ -85,6 +91,11 @@ execute-apply <socket-or-pipe> <apply-request.json> <--confirm operation-id|--no
 preview-recovery <recovery-request.json>\n\
 request-recovery <socket-or-pipe> <recovery-request.json> <--confirm operation-id|--non-interactive>\n\
 execute-recovery <socket-or-pipe> <recovery-request.json> <--confirm operation-id|--non-interactive>\n\
+bootstrap <assess|export> <assessment.json>\n\
+bootstrap proposal <assessment.json> <issuer> <audience> <generation>\n\
+bootstrap import <desired-state.json>\n\
+bootstrap sandbox\n\
+doctor <assessment.json> [controller.db] [adapter-inspection.json]\n\
 controller status <controller.db> [adapter-inspection.json]\nevidence export <controller.db> [adapter-inspection.json]"
 }
 
@@ -225,6 +236,121 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                     receipt.receipt_id, receipt.effective_state
                 )
             });
+        }
+        Some("bootstrap") => match args.get(1).map(String::as_str) {
+            Some("assess") | Some("export") => {
+                let a = require(&args[2..], 1)?;
+                let assessment: BootstrapAssessmentV1 = read(&a[0])?;
+                validate_assessment(&assessment, Controller::now())?;
+                let readiness = assessment.readiness.clone();
+                emit(&assessment, json_output || args[1] == "export", || {
+                    format!("Bootstrap assessment valid: {readiness:?}; no state activated")
+                });
+            }
+            Some("proposal") => {
+                let a = require(&args[2..], 4)?;
+                let assessment: BootstrapAssessmentV1 = read(&a[0])?;
+                let generation = a[3].parse::<u64>().map_err(|_| "GENERATION_INVALID")?;
+                let output =
+                    create_proposal(&assessment, &a[1], &a[2], generation, Controller::now())?;
+                emit(&output, true, String::new);
+            }
+            Some("import") => {
+                let a = require(&args[2..], 1)?;
+                let bundle: DesiredStateBundle = read(&a[0])?;
+                let digest = validate_import(&bundle)?;
+                let output = json!({"valid":true,"bundle_digest":digest,"authorizes_mutation":false,"activated":false});
+                emit(&output, json_output, || {
+                    "Import valid; no state activated".into()
+                });
+            }
+            Some("sandbox") if args.len() == 2 => {
+                let now = Controller::now();
+                let assessment = BootstrapAssessmentV1 {
+                    schema_version: BOOTSTRAP_SCHEMA.into(),
+                    assessment_id: "sandbox".into(),
+                    environment_mode: EnvironmentMode::LocalOnly,
+                    observed_at: now,
+                    expires_at: now + 300,
+                    readiness: AssessmentReadiness::ReadyForProposal,
+                    authorizes_mutation: false,
+                    observations: vec![EnvironmentObservationV1 {
+                        observation_id: "synthetic-runtime".into(),
+                        kind: "runtime".into(),
+                        source: "sandbox_fixture".into(),
+                        status: ObservationStatus::Verified,
+                        observed_at: now,
+                        expires_at: now + 300,
+                        evidence_digest: Some(format!("sha256:{}", "a".repeat(64))),
+                        details: json!({"capability":"synthetic-v1"}),
+                    }],
+                    recommendations: vec![BootstrapRecommendationV1 {
+                        recommendation_id: "sandbox-resource".into(),
+                        reason: "disposable local test".into(),
+                        resource: Some(iicp_management_core::ManagedResource {
+                            resource_id: "runtime:sandbox".into(),
+                            kind: "RuntimeConfigV1".into(),
+                            desired: json!({"schema_version":"iicp.runtime-config.v1","runtime_id":"sandbox","enabled":true}),
+                            secret_refs: Default::default(),
+                        }),
+                        requires_decision_ids: vec![],
+                    }],
+                    required_decisions: vec![],
+                };
+                validate_assessment(&assessment, now)?;
+                let proposal =
+                    create_proposal(&assessment, "sandbox", "controller:sandbox", 0, now)?;
+                let friction = FrictionEvidenceV1 {
+                    schema_version: FRICTION_SCHEMA.into(),
+                    evidence_id: "sandbox:first-success".into(),
+                    evidence_class: "project_rehearsal".into(),
+                    workflow: "portable_bootstrap_first_success".into(),
+                    actor_class: "project_maintainer".into(),
+                    started_at: now,
+                    completed_at: now,
+                    interaction_count: 1,
+                    outcome: "proposal_created".into(),
+                    representative: false,
+                    authorizes_mutation: false,
+                };
+                validate_friction(&friction)?;
+                let output = json!({"assessment":assessment,"proposal":proposal,"friction_evidence":friction,"activated":false});
+                emit(&output, true, String::new);
+            }
+            _ => return Err("USAGE_INVALID".into()),
+        },
+        Some("doctor") => {
+            if args.len() < 2 || args.len() > 4 {
+                return Err("USAGE_INVALID".into());
+            }
+            let assessment: BootstrapAssessmentV1 = read(&args[1])?;
+            let controller_status = args
+                .get(2)
+                .map(|path| inspect_controller_database(Path::new(path), 1).is_ok());
+            let adapter_status = args.get(3).map(|path| {
+                read::<AdapterInspectionV1>(path).is_ok_and(|inspection| {
+                    validate_adapter_inspection(
+                        &inspection,
+                        &BTreeSet::new(),
+                        Controller::now(),
+                        60,
+                    )
+                    .is_ok()
+                })
+            });
+            let output = doctor(
+                &assessment,
+                Controller::now(),
+                controller_status,
+                adapter_status,
+            );
+            let overall = output.overall.clone();
+            emit(&output, json_output, || {
+                format!("Management doctor: {overall:?}")
+            });
+            if overall == CheckState::Fail {
+                return Err("DOCTOR_FAILED".into());
+            }
         }
         Some("submit-plan") => {
             let a = require(&args[1..], 2)?;
