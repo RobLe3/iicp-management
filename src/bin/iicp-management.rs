@@ -41,6 +41,9 @@ use iicp_management_core::rollout::{
     validate_manifest, ConvergenceStatusV1, OperationRunV1, PartialAcceptanceV1, RolloutStore,
     RunState,
 };
+use iicp_management_core::runtime_observation::{
+    parse_runtime_health, project_runtime_health, MAX_RUNTIME_HEALTH_BYTES,
+};
 use iicp_management_core::sandbox::{run_authorized_sandbox, SandboxScenario};
 use iicp_management_core::templates::{
     builtin_templates, preview_impact, render_template, template_by_id, CompatibilityStatus,
@@ -59,6 +62,7 @@ use serde_json::{json, Value};
 use std::{
     collections::{BTreeMap, BTreeSet},
     env, fs,
+    io::{self, Read},
     path::Path,
     process::ExitCode,
 };
@@ -72,6 +76,26 @@ struct RolloutExecutors {
 fn read<T: DeserializeOwned>(path: &str) -> Result<T, String> {
     let bytes = fs::read(path).map_err(|_| format!("INPUT_READ_FAILED:{path}"))?;
     serde_json::from_slice(&bytes).map_err(|_| format!("INPUT_JSON_INVALID:{path}"))
+}
+
+fn read_runtime_health(path: &str) -> Result<Vec<u8>, String> {
+    let mut bytes = Vec::new();
+    if path == "-" {
+        io::stdin()
+            .take((MAX_RUNTIME_HEALTH_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)
+            .map_err(|_| "INPUT_READ_FAILED:-".to_string())?;
+    } else {
+        fs::File::open(path)
+            .map_err(|_| format!("INPUT_READ_FAILED:{path}"))?
+            .take((MAX_RUNTIME_HEALTH_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)
+            .map_err(|_| format!("INPUT_READ_FAILED:{path}"))?;
+    }
+    if bytes.len() > MAX_RUNTIME_HEALTH_BYTES {
+        return Err("RUNTIME_HEALTH_INPUT_TOO_LARGE".into());
+    }
+    Ok(bytes)
 }
 
 fn write_private_json<T: Serialize>(path: &str, value: &T) -> Result<(), String> {
@@ -166,6 +190,7 @@ fn usage() -> &'static str {
     "usage: iicp-management [--json] <completion|validate|plan|diff|simulate|show|explain|verify-receipt|template|impact|bootstrap|doctor|diagnostics|profile|trial|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|rollout|controller|evidence> ...\n\
 validate <bundle.json>\nplan <bundle.json> <accepted.json>\ndiff <plan.json>\nsimulate <current-workspace.json> <proposed-workspace.json> <facts.json> <binding-id>\n\
 show <stored-policies|active-policies|effective-policy> <workspace.json> [facts.json] [binding-id]\n\
+show runtime-health <snapshot.json|-> --target <resource-id> [--brief]\n\
 show application <application-id> policy brief --binding <binding-id> --workspace <workspace.json> --facts <facts.json>\n\
 show routing <intent> --binding <binding-id> --workspace <workspace.json> (--facts <facts.json> [--preference <value>]|--candidates <snapshot.json>) [--brief]\n\
 explain decision <workspace.json> <facts.json> <binding-id> <intent> <decision-id>\n\
@@ -353,6 +378,46 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                 return Err("USAGE_INVALID".into());
             }
             match args[1].as_str() {
+                "runtime-health" => {
+                    let path = args.get(2).ok_or("USAGE_INVALID")?;
+                    let mut target = None;
+                    let mut brief = false;
+                    let mut index = 3;
+                    while index < args.len() {
+                        match args[index].as_str() {
+                            "--target" if target.is_none() => {
+                                target = Some(args.get(index + 1).ok_or("USAGE_INVALID")?.as_str());
+                                index += 2;
+                            }
+                            "--brief" if !brief => {
+                                brief = true;
+                                index += 1;
+                            }
+                            _ => return Err("USAGE_INVALID".into()),
+                        }
+                    }
+                    let target = target.ok_or("USAGE_INVALID")?;
+                    let bytes = read_runtime_health(path)?;
+                    let snapshot = parse_runtime_health(&bytes)?;
+                    let output = project_runtime_health(&snapshot, target, Controller::now())?;
+                    let target = output.target_id.clone();
+                    let evidence = format!("{:?}", output.evidence_state).to_ascii_lowercase();
+                    let effective = format!("{:?}", output.effective_state).to_ascii_lowercase();
+                    let liveness = format!("{:?}", output.reported_liveness).to_ascii_lowercase();
+                    let readiness = format!("{:?}", output.reported_readiness).to_ascii_lowercase();
+                    let reasons = if output.reason_codes.is_empty() {
+                        "none".into()
+                    } else {
+                        output.reason_codes.join(", ")
+                    };
+                    emit(&output, json_output, || {
+                        if brief {
+                            format!("{target}: effective={effective}; evidence={evidence}; mutation not authorized")
+                        } else {
+                            format!("Runtime: {target}\nEvidence: {evidence}\nLiveness: {liveness}\nReadiness: {readiness}\nEffective: {effective}\nReasons: {reasons}\nMutation authorized: no")
+                        }
+                    });
+                }
                 "stored-policies" | "active-policies" => {
                     let repo = repository(&args[2])?;
                     let active = args[1] == "active-policies";

@@ -1,6 +1,6 @@
 [package]
 name = "iicp-management-core"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 rust-version = "1.86"
 description = "Implementation-neutral policy, planning, controller, and conformance foundation for IICP management"
@@ -41,7 +41,8 @@ thiserror = "2"
 base64 = "0.22"
 ed25519-dalek = "2"
 rusqlite = { version = "0.32", features = ["bundled"] }
-iicp-client = { version = "=0.7.108", default-features = false }
+iicp-client = { version = "=0.7.109", default-features = false }
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [

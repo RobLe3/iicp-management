@@ -21,6 +21,7 @@ administrator, or product-specific operator experiences.
 | Staged rollout coordination | Immutable target sets, canary and batch order, durable per-target lifecycle evidence, explicit retry and signed partial acceptance | Target authorization, global transactions, automatic compensation, cross-domain authority or continuous remediation |
 | Drift detection and bounded reconciliation | Fresh post-rollout observation, expected/observed comparison, review classification and non-authorizing one-shot proposals | Continuous remediation, unsafe-class automation, cross-domain authority or invented convergence |
 | Diagnostic evidence | Content-minimized local health, compatibility, freshness and convergence summaries | Raw configuration export, authenticity, mutation authority, remote telemetry or support access |
+| Runtime observation | Content-minimized projection of an explicitly supplied local runtime-health snapshot | Process discovery, node lifecycle authority, network probing, service control or wire-protocol semantics |
 
 ## State flow
 

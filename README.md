@@ -83,6 +83,7 @@ python3 tools/run_policy_lifecycle_conformance.py fixtures/policy-lifecycle-conf
 python3 tools/run_progressive_authority_conformance.py fixtures/progressive-authority-conformance-v1.json
 python3 tools/run_adapter_inspection_conformance.py fixtures/adapter-inspection-conformance-v1.json
 python3 tools/run_resolution_inspection_conformance.py fixtures/resolution-inspection-conformance-v1.json
+python3 tools/run_runtime_observation_conformance.py fixtures/runtime-observation-conformance-v1.json
 ```
 
 The conformance runner accepts an optional fixture path:
@@ -113,10 +114,13 @@ writing. Human-readable output is the default; place `--json` before the
 command for deterministic automation output. Exported controller snapshots are
 local evidence projections and explicitly carry no mutation authority.
 
+Runtime-health inspection reads only a supplied local snapshot, removes process identifiers and never authorizes lifecycle changes. See [the runtime-observation workflow](docs/RUNTIME_OBSERVATION_WORKFLOW.md).
+
 ```bash
 cargo run --locked --bin iicp-management -- validate desired-state.json
 cargo run --locked --bin iicp-management -- --json plan desired-state.json accepted-state.json
 cargo run --locked --bin iicp-management -- show effective-policy workspace.json facts.json binding:example
+cargo run --locked --bin iicp-management -- show runtime-health runtime-health.json --target node:local --brief
 cargo run --locked --bin iicp-management -- show application application:example policy brief \
   --binding binding:example --workspace workspace.json --facts facts.json
 cargo run --locked --bin iicp-management -- show routing urn:iicp:intent:rules:evaluate:v1 \

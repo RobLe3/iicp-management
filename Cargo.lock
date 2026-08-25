@@ -903,9 +903,9 @@ dependencies = [
 
 [[package]]
 name = "iicp-client"
-version = "0.7.108"
+version = "0.7.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e35f63a035b6ad9b2eb99f3ca6a6af487dde1887e28d13aafa98f549b29eddef"
+checksum = "fdc4a4fed5f4176c94a5eca6a5c3ce4aa06f41527541cfa096f31246d4bf4c11"
 dependencies = [
  "aes-gcm",
  "axum",
@@ -938,9 +938,10 @@ dependencies = [
 
 [[package]]
 name = "iicp-management-core"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "base64",
+ "chrono",
  "ed25519-dalek",
  "iicp-client",
  "jsonschema",
