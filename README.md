@@ -289,6 +289,20 @@ inputs. Import and proposal creation do not activate state. The sandbox uses
 disposable synthetic evidence and labels its friction record as a project
 rehearsal, not representative administrator evidence.
 
+Create a portable support record from the same validated inputs:
+
+```bash
+iicp-management diagnostics create assessment.json --controller controller.db --adapter adapter-inspection.json --profile management-profile.json --output diagnostic.json
+iicp-management diagnostics show diagnostic.json
+iicp-management diagnostics verify diagnostic.json
+```
+
+The bundle contains states, counts, stable reason codes and source digests rather
+than raw policies, configuration, identifiers or private topology. Missing
+optional inputs remain visible. Supplied invalid or stale evidence fails bundle
+creation. See [the diagnostic workflow](docs/DIAGNOSTIC_BUNDLE_WORKFLOW.md) and
+[ADR-009](docs/ADR-009-diagnostic-bundles-are-minimized-evidence.md).
+
 ## Policy templates and impact preview
 
 Reference templates are inputs to the existing policy lifecycle, not a second
