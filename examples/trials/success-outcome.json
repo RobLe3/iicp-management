@@ -1,0 +1,7 @@
+{
+  "schema_version": "iicp.management-administrator-trial-outcome.v2",
+  "completed_at": 1787659260,
+  "outcome": "success",
+  "machine_result_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "canonical_test_references": ["test:policy-simulation:receipt:001"]
+}

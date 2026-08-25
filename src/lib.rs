@@ -20,6 +20,7 @@ pub mod recovery;
 pub mod rollout;
 pub mod sandbox;
 pub mod templates;
+pub mod trial;
 
 pub const CONTRACT_VERSION: &str = "1";
 pub const PLANNER_VERSION: &str = "iicp-management-planner/0.1.0";

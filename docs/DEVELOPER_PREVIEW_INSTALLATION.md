@@ -60,6 +60,14 @@ The bundle is suitable for evaluation in an isolated environment. It is not a
 signed binary distribution and does not remove the need to authenticate its
 transfer source.
 
+## Untagged 0.4 candidate validation
+
+The `0.4.0-rc.1` worktree is an unpublished candidate. Validate it from a clean
+reviewed checkout with `scripts/release_readiness.sh`; do not substitute an
+unlocked registry install or treat the candidate version as a published
+package. The readiness lane exercises the administrator trial workflow through
+both the packaged crate and vendored offline bundle.
+
 ## Recovery and removal
 
 The evaluation commands do not register a service. Remove the installed

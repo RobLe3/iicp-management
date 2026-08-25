@@ -46,7 +46,7 @@ tar -tzf "$crate" >"$listing"
 for required in Cargo.lock Cargo.toml README.md COMPATIBILITY.md CHANGELOG.md CONFORMANCE.md LICENSE "docs/RELEASE_NOTES_$version.md"; do
   grep -Eq "/${required}$" "$listing" || fail "package is missing $required"
 done
-for required in contracts/management-profile-v1.schema.json fixtures/management-profile-conformance-v1.json examples/finance/management-profile.json docs/ADR-008-single-crate-developer-preview-release.md contracts/diagnostic-bundle-v1.schema.json fixtures/diagnostic-bundle-conformance-v1.json docs/ADR-009-diagnostic-bundles-are-minimized-evidence.md docs/DIAGNOSTIC_BUNDLE_WORKFLOW.md docs/LOCAL_MANAGEMENT_EVALUATION.md; do
+for required in contracts/management-profile-v1.schema.json fixtures/management-profile-conformance-v1.json examples/finance/management-profile.json docs/ADR-008-single-crate-developer-preview-release.md contracts/diagnostic-bundle-v1.schema.json fixtures/diagnostic-bundle-conformance-v1.json docs/ADR-009-diagnostic-bundles-are-minimized-evidence.md docs/DIAGNOSTIC_BUNDLE_WORKFLOW.md docs/LOCAL_MANAGEMENT_EVALUATION.md contracts/administrator-trial-v2.schema.json fixtures/administrator-trial-conformance-v2.json examples/trials/policy-simulation-definition.json docs/ADR-010-administrator-trial-evidence-is-non-authorizing.md docs/ADMINISTRATOR_TRIAL_WORKFLOW.md; do
   grep -Eq "/${required}$" "$listing" || fail "package is missing $required"
 done
 
@@ -55,6 +55,32 @@ mkdir -p "$source_root"
 tar -xzf "$crate" -C "$source_root"
 source_dir="$source_root/iicp-management-core-$version"
 install_root="$cleanup_dir/install"
+exercise_trial() {
+  local binary="$1" prefix="$2"
+  local definition="$source_dir/examples/trials/policy-simulation-definition.json"
+  local session="$cleanup_dir/$prefix-session.json" event="$cleanup_dir/$prefix-event.json"
+  local outcome="$cleanup_dir/$prefix-outcome.json" evidence="$cleanup_dir/$prefix-evidence.json"
+  local summary="$cleanup_dir/$prefix-summary.json"
+  "$binary" trial start "$definition" --output "$session" >/dev/null
+  python3 - "$session" "$event" "$outcome" <<'PY'
+import json,sys
+session=json.load(open(sys.argv[1],encoding="utf-8")); now=session["started_at"]
+json.dump({"schema_version":"iicp.management-administrator-trial-event.v2","event_id":"event:package:1","occurred_at":now,"kind":"interaction","phase_code":"policy_preview"},open(sys.argv[2],"w",encoding="utf-8"))
+json.dump({"schema_version":"iicp.management-administrator-trial-outcome.v2","completed_at":now,"outcome":"success","machine_result_digest":"sha256:"+"a"*64,"canonical_test_references":["test:package:receipt"]},open(sys.argv[3],"w",encoding="utf-8"))
+PY
+  "$binary" trial event "$session" "$event" >/dev/null
+  "$binary" trial finish "$session" "$outcome" --output "$evidence" >/dev/null
+  "$binary" trial verify "$evidence" >/dev/null
+  "$binary" trial summarize "$evidence" --output "$summary" >/dev/null
+  python3 - "$evidence" "$summary" <<'PY'
+import json,sys
+evidence=json.load(open(sys.argv[1],encoding="utf-8")); summary=json.load(open(sys.argv[2],encoding="utf-8"))
+assert evidence["claim_status"] == "observer_declared"
+assert evidence["authorizes_mutation"] is False and evidence["release_gate_authorized"] is False
+assert summary["numerical_threshold_met"] is False
+assert summary["authorizes_mutation"] is False and summary["release_gate_authorized"] is False
+PY
+}
 CARGO_HOME="$cleanup_dir/online-cargo-home" cargo install --locked --path "$source_dir" --root "$install_root"
 "$install_root/bin/iicp-management" --json profile verify "$source_dir/examples/finance/management-profile.json" >/dev/null
 "$install_root/bin/iicp-management" --json profile intersect "$source_dir/examples/finance/management-profile.json" "$source_dir/examples/finance/management-profile-requirement.json" >/dev/null
@@ -91,6 +117,7 @@ assert value["automatic_retry_permitted"] is False
 PY
 done
 "$install_root/bin/iicp-management-conformance" >/dev/null
+exercise_trial "$install_root/bin/iicp-management" online
 set +e
 controller_help="$($install_root/bin/iicp-management-controller 2>&1)"; controller_status=$?
 set -e
@@ -108,6 +135,7 @@ offline_install="$cleanup_dir/offline-install"
 CARGO_HOME="$cleanup_dir/offline-cargo-home" cargo install --offline --locked --path "$source_dir" --root "$offline_install"
 "$offline_install/bin/iicp-management-conformance" >/dev/null
 "$offline_install/bin/iicp-management" --json bootstrap sandbox --exercise authorized-local >/dev/null
+exercise_trial "$offline_install/bin/iicp-management" offline
 
 mkdir -p "$OUTPUT"
 offline="$OUTPUT/iicp-management-core-$version-offline.tar.gz"

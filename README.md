@@ -246,6 +246,26 @@ generation and evidence provenance. `may_request_apply` means only that the
 projection has the required plan, authorization evidence and satisfied policy
 boundary; the domain-local controller still makes the apply decision.
 
+### Administrator trial evidence
+
+The trial harness records content-minimized usability observations around any
+management interface. It does not execute the tested workflow or authorize a
+change:
+
+```bash
+iicp-management trial start definition.json --output session.json
+iicp-management trial event session.json event.json
+iicp-management trial finish session.json outcome.json --output evidence.json
+iicp-management trial verify evidence.json
+iicp-management trial summarize evidence-*.json --output summary.json
+```
+
+Failed, abandoned and assisted attempts remain in the aggregate. Meeting the
+documented numerical coverage threshold is reported as evidence only;
+`release_gate_authorized` is always false. See
+[`docs/ADMINISTRATOR_TRIAL_WORKFLOW.md`](docs/ADMINISTRATOR_TRIAL_WORKFLOW.md)
+and [ADR-010](docs/ADR-010-administrator-trial-evidence-is-non-authorizing.md).
+
 ### Authorized local execution
 
 Execution is a second, explicit step. Start the controller with one narrowly

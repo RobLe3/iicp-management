@@ -1,0 +1,19 @@
+{
+  "schema_version": "iicp.management-administrator-trial-definition.v2",
+  "trial_id": "trial:policy-simulation:001",
+  "evidence_class": "project_rehearsal",
+  "workflow": "create_and_simulate_simple_policy",
+  "participant": {
+    "role": "developer",
+    "prior_iicp_exposure": "contributor",
+    "contributed_to_tested_workflow": true,
+    "consent_recorded": true
+  },
+  "environment": {
+    "tested_build": "iicp-management/0.4.0-rc.1",
+    "platform": "macos",
+    "deployment_shape": "disposable_local",
+    "enabled_management_profiles": ["management-local-ipc/v1"]
+  },
+  "authorizes_mutation": false
+}

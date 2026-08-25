@@ -25,4 +25,10 @@ class ReleaseLaneContract(unittest.TestCase):
         self.assertNotIn('cargo publish',self.text); self.assertNotIn('gh release create',self.text)
     def test_offline_install_is_exercised(self):
         self.assertIn('cargo vendor --locked',self.text); self.assertIn('cargo install --offline --locked',self.text)
+        self.assertIn('exercise_trial "$offline_install/bin/iicp-management" offline', self.text)
+    def test_administrator_trial_candidate_is_packaged_and_exercised(self):
+        self.assertIn('contracts/administrator-trial-v2.schema.json', self.text)
+        self.assertIn('fixtures/administrator-trial-conformance-v2.json', self.text)
+        self.assertIn('trial summarize', self.text)
+        self.assertIn('release_gate_authorized', self.text)
 if __name__=="__main__": unittest.main()

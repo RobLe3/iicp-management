@@ -44,6 +44,10 @@ use iicp_management_core::templates::{
     ImpactCandidateV1, ImpactRequestV1, TemplateRenderRequestV1, IMPACT_SCHEMA,
     TEMPLATE_RENDER_SCHEMA,
 };
+use iicp_management_core::trial::{
+    finish_trial, record_event, start_trial, summarize_trials, validate_evidence,
+    FrictionEvidenceV2, TrialDefinitionV2, TrialEventV2, TrialOutcomeV2, TrialSessionV2,
+};
 use iicp_management_core::{
     plan, validate_bundle, verify_receipt, AcceptedState, DesiredStateBundle, Plan, Receipt,
 };
@@ -98,6 +102,47 @@ fn write_private_json<T: Serialize>(path: &str, value: &T) -> Result<(), String>
     result
 }
 
+fn replace_private_json<T: Serialize>(path: &str, value: &T) -> Result<(), String> {
+    let bytes = serde_json::to_vec_pretty(value).map_err(|_| "OUTPUT_SERIALIZATION_FAILED")?;
+    let output = Path::new(path);
+    let temporary = output.with_extension(format!("tmp.{}", std::process::id()));
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let result = (|| {
+        use std::io::Write;
+        let mut file = options
+            .open(&temporary)
+            .map_err(|_| "OUTPUT_CREATE_FAILED".to_string())?;
+        file.write_all(&bytes)
+            .and_then(|_| file.write_all(b"\n"))
+            .and_then(|_| file.sync_all())
+            .map_err(|_| "OUTPUT_WRITE_FAILED".to_string())?;
+        fs::rename(&temporary, output).map_err(|_| "OUTPUT_RENAME_FAILED".to_string())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(temporary);
+    }
+    result
+}
+
+fn write_or_verify_private_json<T: Serialize>(path: &str, value: &T) -> Result<(), String> {
+    if Path::new(path).exists() {
+        let existing: Value = read(path)?;
+        let expected = serde_json::to_value(value).map_err(|_| "OUTPUT_SERIALIZATION_FAILED")?;
+        return if existing == expected {
+            replace_private_json(path, value)
+        } else {
+            Err("OUTPUT_CONFLICT".into())
+        };
+    }
+    write_private_json(path, value)
+}
+
 fn repository(path: &str) -> Result<InMemoryPolicyRepository, String> {
     let input: PolicyWorkspaceV1 = read(path)?;
     repository_from_workspace(input).map_err(|error| error.to_string())
@@ -115,7 +160,7 @@ fn emit<T: Serialize>(value: &T, json_output: bool, summary: impl FnOnce() -> St
 }
 
 fn usage() -> &'static str {
-    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|template|impact|bootstrap|doctor|diagnostics|profile|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|rollout|controller|evidence> ...\n\
+    "usage: iicp-management [--json] <validate|plan|diff|simulate|show|explain|verify-receipt|template|impact|bootstrap|doctor|diagnostics|profile|trial|submit-plan|preview-apply|request-apply|execute-apply|preview-recovery|request-recovery|execute-recovery|rollout|controller|evidence> ...\n\
 validate <bundle.json>\nplan <bundle.json> <accepted.json>\ndiff <plan.json>\nsimulate <current-workspace.json> <proposed-workspace.json> <facts.json> <binding-id>\n\
 show <stored-policies|active-policies|effective-policy> <workspace.json> [facts.json] [binding-id]\n\
 explain decision <workspace.json> <facts.json> <binding-id> <intent> <decision-id>\n\
@@ -141,6 +186,11 @@ diagnostics <verify|show> <bundle.json>\n\
 profile <show|verify> <profile.json>\n\
 profile intersect <profile.json> <requirement.json>\n\
 profile controller <socket-or-pipe>\n\
+trial start <definition.json> --output <session.json>\n\
+trial event <session.json> <event.json>\n\
+trial finish <session.json> <outcome.json> --output <evidence.json>\n\
+trial verify <evidence.json>\n\
+trial summarize <evidence.json>... --output <summary.json>\n\
 controller status <controller.db> [adapter-inspection.json]\nevidence export <controller.db> [adapter-inspection.json]"
 }
 
@@ -623,6 +673,81 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
                 return Err("DOCTOR_FAILED".into());
             }
         }
+        Some("trial") => match args.get(1).map(String::as_str) {
+            Some("start") => {
+                if args.len() != 5 || args[3] != "--output" {
+                    return Err("USAGE_INVALID".into());
+                }
+                let definition: TrialDefinitionV2 = read(&args[2])?;
+                let session = start_trial(definition, Controller::now())?;
+                write_private_json(&args[4], &session)?;
+                emit(&session, json_output, || {
+                    format!("Trial {} started", session.definition.trial_id)
+                });
+            }
+            Some("event") => {
+                let a = require(&args[2..], 2)?;
+                let mut session: TrialSessionV2 = read(&a[0])?;
+                let event: TrialEventV2 = read(&a[1])?;
+                record_event(&mut session, event)?;
+                replace_private_json(&a[0], &session)?;
+                emit(&session, json_output, || {
+                    format!("Trial event recorded ({})", session.events.len())
+                });
+            }
+            Some("finish") => {
+                if args.len() != 6 || args[4] != "--output" {
+                    return Err("USAGE_INVALID".into());
+                }
+                let mut session: TrialSessionV2 = read(&args[2])?;
+                let outcome: TrialOutcomeV2 = read(&args[3])?;
+                let evidence = finish_trial(&session, outcome)?;
+                write_or_verify_private_json(&args[5], &evidence)?;
+                session.finalized = true;
+                replace_private_json(&args[2], &session)?;
+                emit(&evidence, json_output, || {
+                    format!("Trial {} finalized", session.definition.trial_id)
+                });
+            }
+            Some("verify") => {
+                let a = require(&args[2..], 1)?;
+                let evidence: FrictionEvidenceV2 = read(&a[0])?;
+                validate_evidence(&evidence)?;
+                let output = json!({
+                    "valid": true,
+                    "evidence_id": evidence.evidence_id,
+                    "claim_status": evidence.claim_status,
+                    "authorizes_mutation": false,
+                    "release_gate_authorized": false
+                });
+                emit(&output, json_output, || {
+                    "Trial evidence valid (observer-declared)".into()
+                });
+            }
+            Some("summarize") => {
+                if args.len() < 5 || args[args.len() - 2] != "--output" {
+                    return Err("USAGE_INVALID".into());
+                }
+                let evidence = args[2..args.len() - 2]
+                    .iter()
+                    .map(|path| read::<FrictionEvidenceV2>(path))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let summary = summarize_trials(&evidence)?;
+                write_private_json(&args[args.len() - 1], &summary)?;
+                emit(&summary, json_output, || {
+                    format!(
+                        "Trial summary: {} observations; numerical threshold {}",
+                        summary.total_observations,
+                        if summary.numerical_threshold_met {
+                            "met"
+                        } else {
+                            "not met"
+                        }
+                    )
+                });
+            }
+            _ => return Err("USAGE_INVALID".into()),
+        },
         Some("diagnostics") => match args.get(1).map(String::as_str) {
             Some("create") => {
                 if args.len() < 5 {

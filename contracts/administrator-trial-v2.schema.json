@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/schemas/management/administrator-trial-v2.schema.json",
+  "title": "IICP administrator trial evidence v2",
+  "oneOf": [
+    {"$ref": "#/$defs/definition"},
+    {"$ref": "#/$defs/session"},
+    {"$ref": "#/$defs/event"},
+    {"$ref": "#/$defs/outcome"},
+    {"$ref": "#/$defs/evidence"},
+    {"$ref": "#/$defs/summary"}
+  ],
+  "$defs": {
+    "code": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[A-Za-z0-9._:/-]+$"},
+    "digest": {"type": "string", "pattern": "^sha256:[A-Fa-f0-9]{64}$"},
+    "workflow": {"enum": ["add_existing_intelligence_endpoint", "create_and_simulate_simple_policy", "create_restricted_trust_domain", "diagnose_failed_resolution", "restore_prior_policy_generation", "connect_new_site"]},
+    "evidenceClass": {"enum": ["project_rehearsal", "representative_observation", "independent_reproduction"]},
+    "role": {"enum": ["infrastructure_administrator", "system_administrator", "cloud_engineer", "security_engineer", "sap_administrator", "developer"]},
+    "participant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "prior_iicp_exposure", "contributed_to_tested_workflow", "consent_recorded"],
+      "properties": {
+        "role": {"$ref": "#/$defs/role"},
+        "prior_iicp_exposure": {"enum": ["none", "basic", "experienced", "contributor"]},
+        "contributed_to_tested_workflow": {"type": "boolean"},
+        "consent_recorded": {"type": "boolean"}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tested_build", "platform", "deployment_shape", "enabled_management_profiles"],
+      "properties": {
+        "tested_build": {"$ref": "#/$defs/code"},
+        "platform": {"enum": ["linux", "macos", "windows", "container", "kubernetes", "other_disposable"]},
+        "deployment_shape": {"enum": ["disposable_local", "disposable_container", "disposable_cluster", "air_gapped_test"]},
+        "enabled_management_profiles": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/code"}}
+      }
+    },
+    "definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "trial_id", "evidence_class", "workflow", "participant", "environment", "authorizes_mutation"],
+      "properties": {
+        "schema_version": {"const": "iicp.management-administrator-trial-definition.v2"},
+        "trial_id": {"$ref": "#/$defs/code"},
+        "evidence_class": {"$ref": "#/$defs/evidenceClass"},
+        "workflow": {"$ref": "#/$defs/workflow"},
+        "participant": {"$ref": "#/$defs/participant"},
+        "environment": {"$ref": "#/$defs/environment"},
+        "authorizes_mutation": {"const": false}
+      }
+    },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "event_id", "occurred_at", "kind", "phase_code"],
+      "properties": {
+        "schema_version": {"const": "iicp.management-administrator-trial-event.v2"},
+        "event_id": {"$ref": "#/$defs/code"},
+        "occurred_at": {"type": "integer", "minimum": 0},
+        "kind": {"enum": ["interaction", "explicit_input", "manual_secret_transfer", "assistance"]},
+        "phase_code": {"$ref": "#/$defs/code"}
+      }
+    },
+    "outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "completed_at", "outcome", "canonical_test_references"],
+      "properties": {
+        "schema_version": {"const": "iicp.management-administrator-trial-outcome.v2"},
+        "completed_at": {"type": "integer", "minimum": 0},
+        "outcome": {"enum": ["success", "failed", "abandoned"]},
+        "machine_result_digest": {"$ref": "#/$defs/digest"},
+        "canonical_test_references": {"type": "array", "maxItems": 64, "uniqueItems": true, "items": {"type": "string", "pattern": "^test:[A-Za-z0-9._:/-]+$", "maxLength": 256}}
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "definition", "started_at", "events", "finalized", "authorizes_mutation"],
+      "properties": {
+        "schema_version": {"const": "iicp.management-administrator-trial-session.v2"},
+        "definition": {"$ref": "#/$defs/definition"},
+        "started_at": {"type": "integer", "minimum": 0},
+        "events": {"type": "array", "items": {"$ref": "#/$defs/event"}},
+        "finalized": {"type": "boolean"},
+        "authorizes_mutation": {"const": false}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "evidence_id", "evidence_class", "claim_status", "workflow", "participant", "environment", "started_at", "completed_at", "duration_seconds", "interaction_count", "explicit_input_count", "manual_secret_transfer_count", "assistance_count", "outcome", "unassisted_success", "canonical_test_references", "authorizes_mutation", "release_gate_authorized"],
+      "properties": {
+        "schema_version": {"const": "iicp.management-friction-evidence.v2"},
+        "evidence_id": {"$ref": "#/$defs/code"},
+        "evidence_class": {"$ref": "#/$defs/evidenceClass"},
+        "claim_status": {"const": "observer_declared"},
+        "workflow": {"$ref": "#/$defs/workflow"},
+        "participant": {"$ref": "#/$defs/participant"},
+        "environment": {"$ref": "#/$defs/environment"},
+        "started_at": {"type": "integer", "minimum": 0},
+        "completed_at": {"type": "integer", "minimum": 0},
+        "duration_seconds": {"type": "integer", "minimum": 0},
+        "interaction_count": {"type": "integer", "minimum": 0},
+        "explicit_input_count": {"type": "integer", "minimum": 0},
+        "manual_secret_transfer_count": {"type": "integer", "minimum": 0},
+        "assistance_count": {"type": "integer", "minimum": 0},
+        "outcome": {"enum": ["success", "failed", "abandoned"]},
+        "unassisted_success": {"type": "boolean"},
+        "machine_result_digest": {"$ref": "#/$defs/digest"},
+        "canonical_test_references": {"type": "array", "items": {"type": "string", "pattern": "^test:[A-Za-z0-9._:/-]+$", "maxLength": 256}},
+        "authorizes_mutation": {"const": false},
+        "release_gate_authorized": {"const": false}
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "workflow", "total_observations", "successful", "failed", "abandoned", "assisted", "completion_rate_basis_points", "duration_min_seconds", "duration_median_seconds", "duration_max_seconds", "representative_observations", "representative_role_count", "evidence_class_counts", "numerical_threshold_met", "authorizes_mutation", "release_gate_authorized"],
+      "properties": {
+        "schema_version": {"const": "iicp.management-administrator-trial-summary.v2"},
+        "workflow": {"$ref": "#/$defs/workflow"},
+        "total_observations": {"type": "integer", "minimum": 1},
+        "successful": {"type": "integer", "minimum": 0},
+        "failed": {"type": "integer", "minimum": 0},
+        "abandoned": {"type": "integer", "minimum": 0},
+        "assisted": {"type": "integer", "minimum": 0},
+        "completion_rate_basis_points": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "duration_min_seconds": {"type": "integer", "minimum": 0},
+        "duration_median_seconds": {"type": "integer", "minimum": 0},
+        "duration_max_seconds": {"type": "integer", "minimum": 0},
+        "representative_observations": {"type": "integer", "minimum": 0},
+        "representative_role_count": {"type": "integer", "minimum": 0},
+        "evidence_class_counts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+        "numerical_threshold_met": {"type": "boolean"},
+        "authorizes_mutation": {"const": false},
+        "release_gate_authorized": {"const": false}
+      }
+    }
+  }
+}

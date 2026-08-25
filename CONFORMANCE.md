@@ -107,3 +107,15 @@ cargo test --locked --test diagnostics
 The bundle is a content-minimized local projection. Passing the fixture does not
 authenticate its creator, establish target convergence, authorize mutation or
 constitute representative administrator evidence.
+
+## Administrator trial evidence
+
+`fixtures/administrator-trial-conformance-v2.json` records the bounded cases
+for the version 2 trial-session and friction-evidence contracts. The Rust tests
+execute those cases and validate serialized artifacts against
+`contracts/administrator-trial-v2.schema.json`.
+
+Passing this fixture proves only project conformance to the recorder contract.
+It does not prove that a participant was independent, that an interface met a
+time budget, or that a release gate was approved. Failed, abandoned and assisted
+observations must remain in any reported aggregate.

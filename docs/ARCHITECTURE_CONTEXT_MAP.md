@@ -14,7 +14,7 @@ administrator, or product-specific operator experiences.
 | Application binding | The association between an application attachment and one or more policy revisions | Upstream application behavior |
 | Request connector | Translation of an upstream request into bounded IICP request and policy context | Policy definition or authority expansion |
 | Integration adapter | Capability-scoped observation and application of an authorized local plan | Unbounded host control, restart authority or secret transport |
-| Adoption projection | Evidence-bound observation, recommendation and friction measurements | Trust establishment, approval or mutation authority |
+| Adoption projection | Evidence-bound observation, recommendation, privacy-bounded trial sessions and friction measurements | Participant-independence proof, trust establishment, approval or mutation authority |
 | Environment bootstrap and adoption | Preflight observations, non-authorizing recommendations, required decisions, proposals and friction evidence | Trust establishment, package installation internals, secret values or activation |
 | Policy templates and impact preview | Versioned template inputs, deterministic rendering and evidence-bound change projection | Independent policy semantics, activation authority, invented operational metrics or convergence claims |
 | Staged rollout coordination | Immutable target sets, canary and batch order, durable per-target lifecycle evidence, explicit retry and signed partial acceptance | Target authorization, global transactions, automatic compensation, cross-domain authority or continuous remediation |

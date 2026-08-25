@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0-rc.1 — candidate
+
+- Add privacy-bounded administrator trial-session and friction-evidence v2 contracts.
+- Add atomic trial start, event, finish, verify and same-workflow summary commands.
+- Preserve failures, abandoned runs and assistance without granting release or mutation authority.
+- Retain version 1 friction evidence and the Management 0.3.0 sandbox unchanged.
+
 ## 0.3.0 — 2026-08-25 developer preview
 
 - Adds a one-command, authorized local management exercise with bounded

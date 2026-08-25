@@ -1,0 +1,21 @@
+{
+  "fixture_version": "2.0.0-candidate",
+  "schema": "../contracts/administrator-trial-v2.schema.json",
+  "evidence_class": "project_verified",
+  "cases": [
+    {"id": "TRIAL-01", "description": "Project rehearsal cannot become representative evidence.", "expected": "accept_non_representative"},
+    {"id": "TRIAL-02", "description": "A contributor cannot be classified as a representative or independent participant.", "expected": "reject"},
+    {"id": "TRIAL-03", "description": "Duplicate and out-of-order events fail validation.", "expected": "reject"},
+    {"id": "TRIAL-04", "description": "Failed, abandoned and assisted runs remain in aggregates.", "expected": "retain"},
+    {"id": "TRIAL-05", "description": "Five representative observations across three roles meet only the numerical threshold.", "expected": "threshold_only"},
+    {"id": "TRIAL-06", "description": "No aggregate can authorize a release gate or management mutation.", "expected": "non_authorizing"},
+    {"id": "TRIAL-07", "description": "Unknown or personal fields fail closed.", "expected": "reject"},
+    {"id": "TRIAL-08", "description": "A successful run requires a machine-result digest.", "expected": "reject_without_digest"}
+  ],
+  "non_claims": [
+    "No representative administrator observation",
+    "No proof of participant independence",
+    "No release-gate approval",
+    "No management mutation or deployment"
+  ]
+}
