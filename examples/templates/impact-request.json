@@ -1,0 +1,53 @@
+{
+  "schema_version": "iicp.management-policy-impact.v1",
+  "current": {
+    "revisions": [{
+      "schema_version": "1",
+      "policy_id": "policy:baseline",
+      "revision_id": "r1",
+      "authority": "domain:example",
+      "scope": "application:example",
+      "disposition": "stored",
+      "policy": {"eq": ["member", true]},
+      "extensions": []
+    }],
+    "policy_sets": [],
+    "binding": {
+      "schema_version": "1",
+      "binding_id": "binding:example",
+      "application_id": "application:example",
+      "authority": "domain:example",
+      "policies": [{"policy_id": "policy:baseline", "revision_id": "r1", "authority_rank": 100, "mandatory": true, "order": 1}],
+      "policy_sets": [],
+      "extensions": []
+    }
+  },
+  "proposed": {
+    "revisions": [{
+      "schema_version": "1",
+      "policy_id": "policy:template:eu-processing",
+      "revision_id": "r1",
+      "authority": "domain:example",
+      "scope": "application:example",
+      "disposition": "stored",
+      "policy": {"in": ["region", ["EU"]]},
+      "extensions": []
+    }],
+    "policy_sets": [],
+    "binding": {
+      "schema_version": "1",
+      "binding_id": "binding:example",
+      "application_id": "application:example",
+      "authority": "domain:example",
+      "policies": [{"policy_id": "policy:template:eu-processing", "revision_id": "r1", "authority_rank": 100, "mandatory": true, "order": 1}],
+      "policy_sets": [],
+      "extensions": []
+    }
+  },
+  "candidates": [{
+    "candidate_id": "candidate:example-us",
+    "facts": {"member": true, "region": "US", "fallback_available": false},
+    "compatibility": "compatible",
+    "metrics": {}
+  }]
+}

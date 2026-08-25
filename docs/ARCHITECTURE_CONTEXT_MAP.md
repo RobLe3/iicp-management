@@ -16,6 +16,7 @@ administrator, or product-specific operator experiences.
 | Integration adapter | Capability-scoped observation and application of an authorized local plan | Unbounded host control, restart authority or secret transport |
 | Adoption projection | Evidence-bound observation, recommendation and friction measurements | Trust establishment, approval or mutation authority |
 | Environment bootstrap and adoption | Preflight observations, non-authorizing recommendations, required decisions, proposals and friction evidence | Trust establishment, package installation internals, secret values or activation |
+| Policy templates and impact preview | Versioned template inputs, deterministic rendering and evidence-bound change projection | Independent policy semantics, activation authority, invented operational metrics or convergence claims |
 
 ## State flow
 

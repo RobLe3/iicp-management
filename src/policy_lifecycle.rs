@@ -10,6 +10,18 @@ pub const POLICY_SET_KIND: &str = "iicp.management/policy-set-v1";
 pub const APPLICATION_BINDING_KIND: &str = "iicp.management/application-binding-v1";
 pub const POLICY_ACTIVATION_KIND: &str = "iicp.management/policy-activation-v1";
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct PolicyWorkspaceV1 {
+    #[serde(default)]
+    pub revisions: Vec<PolicyRevisionV1>,
+    #[serde(default)]
+    pub policy_sets: Vec<PolicySetV1>,
+    pub binding: ApplicationBindingV1,
+    #[serde(default)]
+    pub activation: Option<PolicyActivationV1>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum PolicyDisposition {
@@ -798,6 +810,23 @@ impl InMemoryPolicyRepository {
             fact_snapshot_digest: effective.fact_snapshot_digest.clone(),
         })
     }
+}
+
+pub fn repository_from_workspace(
+    input: PolicyWorkspaceV1,
+) -> Result<InMemoryPolicyRepository, PolicyLifecycleError> {
+    let mut repository = InMemoryPolicyRepository::default();
+    for revision in input.revisions {
+        repository.store_revision(revision)?;
+    }
+    for set in input.policy_sets {
+        repository.store_set(set)?;
+    }
+    repository.store_binding(input.binding)?;
+    if let Some(activation) = input.activation {
+        repository.activate(activation)?;
+    }
+    Ok(repository)
 }
 
 pub fn simulate_policy_change(

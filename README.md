@@ -256,3 +256,26 @@ iicp-management bootstrap sandbox
 inputs. Import and proposal creation do not activate state. The sandbox uses
 disposable synthetic evidence and labels its friction record as a project
 rehearsal, not representative administrator evidence.
+
+## Policy templates and impact preview
+
+Reference templates are inputs to the existing policy lifecycle, not a second
+policy engine. List or inspect the catalog, then render an explicit request:
+
+```bash
+iicp-management template list
+iicp-management template show eu-processing
+iicp-management template render render-request.json
+iicp-management impact preview impact-request.json
+```
+
+The initial catalog contains `internal-only`, `eu-processing`,
+`maximum-privacy` and `high-availability`. Rendering produces normal policy
+revision and application-binding objects with `authorizes_activation=false`.
+Impact preview evaluates only supplied candidate facts. Cost, latency, quality
+and capacity are reported as `NOT_AVAILABLE` unless the request supplies fresh,
+integrity-bound observations. Neither operation changes accepted or target
+state.
+
+A copy-and-paste walkthrough and deterministic fixtures are available in
+[`docs/POLICY_TEMPLATE_WORKFLOW.md`](docs/POLICY_TEMPLATE_WORKFLOW.md).
