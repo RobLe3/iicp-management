@@ -35,4 +35,14 @@ class ReleaseLaneContract(unittest.TestCase):
         self.assertIn('fixtures/administrator-trial-conformance-v2.json', self.text)
         self.assertIn('trial summarize', self.text)
         self.assertIn('release_gate_authorized', self.text)
+    def test_bootstrap_workflow_candidate_is_packaged_and_exercised(self):
+        for value in ('contracts/bootstrap-workflow-v1.schema.json',
+                      'fixtures/bootstrap-workflow-conformance-v1.json',
+                      'docs/ADR-014-first-run-preparation-composes-existing-contracts.md',
+                      'tools/run_bootstrap_workflow_conformance.py'):
+            self.assertIn(value, self.text)
+        self.assertIn('bootstrap prepare', self.text)
+        self.assertIn('iicp-management $version', self.text)
+        self.assertIn('authorizes_mutation', self.text)
+        self.assertIn('activated', self.text)
 if __name__=="__main__": unittest.main()

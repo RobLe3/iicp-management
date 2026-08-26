@@ -31,6 +31,7 @@ command -v cargo-audit >/dev/null || fail "cargo-audit 0.22.2 is required"
 python3 scripts/check_dependency_policy.py
 python3 -m unittest scripts/test_dependency_policy.py scripts/test_release_manifest.py scripts/test_release_readiness.py tools/test_diagnostic_v2_conformance.py
 python3 tools/run_diagnostic_v2_conformance.py fixtures/diagnostic-bundle-conformance-v2.json >/dev/null
+python3 tools/run_bootstrap_workflow_conformance.py fixtures/bootstrap-workflow-conformance-v1.json >/dev/null
 cargo metadata --locked --format-version 1 >/dev/null
 advisory="$cleanup_dir/advisory-db"
 git clone --quiet --depth 1 https://github.com/RustSec/advisory-db.git "$advisory"
@@ -47,7 +48,7 @@ tar -tzf "$crate" >"$listing"
 for required in Cargo.lock Cargo.toml README.md COMPATIBILITY.md CHANGELOG.md CONFORMANCE.md LICENSE "docs/RELEASE_NOTES_$version.md"; do
   grep -Eq "/${required}$" "$listing" || fail "package is missing $required"
 done
-for required in contracts/management-profile-v1.schema.json fixtures/management-profile-conformance-v1.json examples/finance/management-profile.json docs/ADR-008-single-crate-developer-preview-release.md contracts/diagnostic-bundle-v1.schema.json fixtures/diagnostic-bundle-conformance-v1.json docs/ADR-009-diagnostic-bundles-are-minimized-evidence.md docs/DIAGNOSTIC_BUNDLE_WORKFLOW.md docs/LOCAL_MANAGEMENT_EVALUATION.md contracts/administrator-trial-v2.schema.json fixtures/administrator-trial-conformance-v2.json examples/trials/policy-simulation-definition.json docs/ADR-010-administrator-trial-evidence-is-non-authorizing.md docs/ADMINISTRATOR_TRIAL_WORKFLOW.md contracts/diagnostic-bundle-v2.schema.json fixtures/diagnostic-bundle-conformance-v2.json fixtures/runtime-health-ready-v1.json docs/ADR-013-runtime-aware-diagnostics-preserve-v1.md tools/run_diagnostic_v2_conformance.py; do
+for required in contracts/management-profile-v1.schema.json fixtures/management-profile-conformance-v1.json examples/finance/management-profile.json docs/ADR-008-single-crate-developer-preview-release.md contracts/diagnostic-bundle-v1.schema.json fixtures/diagnostic-bundle-conformance-v1.json docs/ADR-009-diagnostic-bundles-are-minimized-evidence.md docs/DIAGNOSTIC_BUNDLE_WORKFLOW.md docs/LOCAL_MANAGEMENT_EVALUATION.md contracts/administrator-trial-v2.schema.json fixtures/administrator-trial-conformance-v2.json examples/trials/policy-simulation-definition.json docs/ADR-010-administrator-trial-evidence-is-non-authorizing.md docs/ADMINISTRATOR_TRIAL_WORKFLOW.md contracts/diagnostic-bundle-v2.schema.json fixtures/diagnostic-bundle-conformance-v2.json fixtures/runtime-health-ready-v1.json docs/ADR-013-runtime-aware-diagnostics-preserve-v1.md tools/run_diagnostic_v2_conformance.py contracts/bootstrap-workflow-v1.schema.json fixtures/bootstrap-workflow-conformance-v1.json docs/ADR-014-first-run-preparation-composes-existing-contracts.md tools/run_bootstrap_workflow_conformance.py; do
   grep -Eq "/${required}$" "$listing" || fail "package is missing $required"
 done
 
@@ -82,7 +83,31 @@ assert summary["numerical_threshold_met"] is False
 assert summary["authorizes_mutation"] is False and summary["release_gate_authorized"] is False
 PY
 }
+exercise_bootstrap_prepare() {
+  local binary="$1" prefix="$2"
+  local config="$cleanup_dir/$prefix-runtime-config.json"
+  local workflow="$cleanup_dir/$prefix-bootstrap-workflow.json"
+  cat >"$config" <<'JSON'
+{"schema_version":1,"mode":"local_only","directory":{"source":"local","local_discovery_enabled":false},"membership":{"required":false,"require_authenticated_clients":false,"require_authenticated_nodes":false,"reject_unknown_peers":false},"mesh":{"enabled":false,"require_authenticated_gossip":false},"execution":{"allow_local":true,"allow_external_providers":false,"allow_public_iicp":false},"cip":{"enabled":false,"require_same_trust_domain":false},"federation":{"enabled":false,"trusted_domains":[]},"network":{"allow_public_fallback":false,"allow_external_bootstrap":false,"allow_external_relay":false,"allow_auto_update_network":false},"secret_refs":{}}
+JSON
+  [[ "$($binary --version)" == "iicp-management $version" ]] || fail "$prefix installed version mismatch"
+  "$binary" --json bootstrap prepare "$config" \
+    --resource-id runtime:package \
+    --operator-id operator:package \
+    --controller-id controller:package \
+    --controller-generation 0 >"$workflow"
+  python3 - "$workflow" <<'PY'
+import json,sys
+value=json.load(open(sys.argv[1],encoding="utf-8"))
+assert value["schema_version"] == "iicp.management-bootstrap-workflow.v1"
+assert value["assessment"]["readiness"] == "ready_for_proposal"
+assert value["doctor"]["schema_version"] == "iicp.management-doctor-report.v1"
+assert value["proposal"]["expected_generation"] == 0
+assert value["authorizes_mutation"] is False and value["activated"] is False
+PY
+}
 CARGO_HOME="$cleanup_dir/online-cargo-home" cargo install --locked --path "$source_dir" --root "$install_root"
+exercise_bootstrap_prepare "$install_root/bin/iicp-management" online
 "$install_root/bin/iicp-management" --json profile verify "$source_dir/examples/finance/management-profile.json" >/dev/null
 "$install_root/bin/iicp-management" --json profile intersect "$source_dir/examples/finance/management-profile.json" "$source_dir/examples/finance/management-profile-requirement.json" >/dev/null
 "$install_root/bin/iicp-management" --json plan "$source_dir/examples/finance/desired-state.json" "$source_dir/examples/finance/accepted-state.json" >/dev/null
@@ -161,6 +186,7 @@ CARGO_HOME="$cleanup_dir/offline-cargo-home" cargo install --offline --locked --
 "$offline_install/bin/iicp-management-conformance" >/dev/null
 "$offline_install/bin/iicp-management" completion bash | grep -q "iicp-management __complete"
 "$offline_install/bin/iicp-management" --json bootstrap sandbox --exercise authorized-local >/dev/null
+exercise_bootstrap_prepare "$offline_install/bin/iicp-management" offline
 exercise_trial "$offline_install/bin/iicp-management" offline
 
 mkdir -p "$OUTPUT"
