@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0-rc.1 — unpublished candidate
+
+- Convert an explicit canonical runtime configuration into the existing
+  non-authorizing bootstrap assessment and desired-state proposal path.
+- Optionally bind content-minimized runtime-health evidence to the same managed
+  resource without executing another process or contacting a Directory.
+- Preserve the published 0.8 contracts and keep publication, deployment and
+  representative administrator evidence as separate gates.
+
 ## 0.8.0 — 2026-08-25 developer preview
 
 - Add diagnostic bundle v2 with content-minimized runtime-health evidence while preserving v1.
