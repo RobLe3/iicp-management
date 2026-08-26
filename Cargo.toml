@@ -25,6 +25,7 @@ include = [
     "docs/**",
     "examples/**",
     "fixtures/**",
+    "tools/run_diagnostic_v2_conformance.py",
     "src/**",
 ]
 
