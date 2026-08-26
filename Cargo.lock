@@ -944,6 +944,7 @@ dependencies = [
  "ed25519-dalek",
  "iicp-client",
  "jsonschema",
+ "libc",
  "rusqlite",
  "serde",
  "serde_jcs",

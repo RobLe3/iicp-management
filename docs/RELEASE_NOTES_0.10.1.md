@@ -7,6 +7,10 @@ used a newer host compiler and did not expose the mismatch. Version 0.10.1 pins
 the compatible ICU4X 2.2 set and verifies the complete locked graph with the
 exact declared compiler during release readiness.
 
+Unix controller sockets are also owner-only from the first observable
+filesystem state. The publisher gate caught and removed the former
+bind-then-chmod interval before publication.
+
 There is no wire, contract or serialized-behavior change. The 0.10 first-run
 workflow remains:
 
