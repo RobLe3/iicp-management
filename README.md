@@ -86,6 +86,12 @@ python3 tools/run_resolution_inspection_conformance.py fixtures/resolution-inspe
 python3 tools/run_runtime_observation_conformance.py fixtures/runtime-observation-conformance-v1.json
 ```
 
+Release-readiness runs use an isolated Cargo target with incremental
+compilation disabled and retain release assets under `release-artifacts/`, not
+inside volatile build output. Set `IICP_KEEP_FAILED_CARGO_TARGET=1` only when a
+failed target is needed for diagnosis. Ordinary interactive Cargo commands are
+unchanged.
+
 The conformance runner accepts an optional fixture path:
 
 ```bash

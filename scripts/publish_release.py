@@ -110,7 +110,7 @@ def verify_registry_checksum(version: str, crate: Path) -> None:
 
 
 def artifact_paths(root: Path, version: str) -> tuple[Path, Path, Path]:
-    output = root / "target" / "release-readiness"
+    output = root / "release-artifacts" / "release-readiness"
     return (
         output / f"{PACKAGE}-{version}.crate",
         output / f"{PACKAGE}-{version}-offline.tar.gz",

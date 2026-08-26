@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_INCREMENTAL: "0"
+  CARGO_TARGET_DIR: ${{ runner.temp }}/iicp-management
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -19,7 +23,7 @@ jobs:
       - name: Check dependency policy before compilation
         run: python3 scripts/check_dependency_policy.py
       - name: Test release-safety contracts
-        run: python3 -m unittest scripts/test_dependency_policy.py scripts/test_release_manifest.py scripts/test_release_readiness.py scripts/test_publish_release.py
+        run: python3 -m unittest scripts/test_dependency_policy.py scripts/test_release_manifest.py scripts/test_release_readiness.py scripts/test_publish_release.py scripts/test_disposable_cargo_target.py
       - run: cargo fmt --check
       - run: python3 tools/test_public_references.py
       - run: python3 tools/check_public_references.py
