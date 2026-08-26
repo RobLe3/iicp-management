@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.10.0-rc.1 — 2026-08-26 unpublished candidate
+## 0.10.0 — 2026-08-26 developer preview
 
 - Compose runtime configuration, bounded runtime-health evidence, diagnostics and
   a desired-state proposal into one non-authorizing bootstrap workflow.
@@ -8,6 +8,9 @@
   conformance checker.
 - Add `bootstrap prepare` plus truthful CLI version reporting without adding
   discovery, activation, service control or network side effects.
+- Promote the unchanged `0.10.0-rc.1` behavior after an isolated packaged-crate
+  project rehearsal completed with zero release blockers, zero manual secret
+  transfers and no Directory, production-target or service contact.
 
 ## 0.9.0 — 2026-08-26 developer preview
 
