@@ -2,7 +2,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUTPUT="${1:-$ROOT/target/release-readiness}"
+if [[ "${IICP_DISPOSABLE_CARGO_ACTIVE:-0}" != 1 ]]; then
+  exec "$ROOT/scripts/with_disposable_cargo_target.sh" --label management-release-readiness -- "$0" "$@"
+fi
+OUTPUT="${1:-$ROOT/release-artifacts/release-readiness}"
 fail() { printf 'release readiness failed: %s\n' "$*" >&2; exit 1; }
 cleanup_dir="$(mktemp -d)"
 cleanup() { python3 - "$cleanup_dir" <<'PY'
@@ -51,7 +54,7 @@ cargo test --locked
 cargo clippy --locked --all-targets -- -D warnings
 cargo package --locked
 
-crate="$ROOT/target/package/iicp-management-core-$version.crate"
+crate="${CARGO_TARGET_DIR:?missing disposable Cargo target}/package/iicp-management-core-$version.crate"
 [[ -f "$crate" ]] || fail "packaged crate not found"
 listing="$cleanup_dir/package.list"
 tar -tzf "$crate" >"$listing"

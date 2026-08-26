@@ -21,6 +21,9 @@ class ReleaseLaneContract(unittest.TestCase):
         self.assertGreaterEqual(self.text.count('--locked --path'),2)
         self.assertNotRegex(self.text,r'cargo install(?![^\n]*--locked)')
         self.assertIn('online-cargo-home', self.text)
+        self.assertIn('with_disposable_cargo_target.sh', self.text)
+        self.assertIn('${CARGO_TARGET_DIR:', self.text)
+        self.assertIn('release-artifacts/release-readiness', self.text)
     def test_packaged_diagnostic_contract_is_exercised(self):
         for value in ('contracts/diagnostic-bundle-v1.schema.json', 'fixtures/diagnostic-bundle-conformance-v1.json', 'docs/ADR-009-diagnostic-bundles-are-minimized-evidence.md', 'docs/DIAGNOSTIC_BUNDLE_WORKFLOW.md', 'contracts/diagnostic-bundle-v2.schema.json', 'fixtures/diagnostic-bundle-conformance-v2.json', 'docs/ADR-013-runtime-aware-diagnostics-preserve-v1.md'):
             self.assertIn(value, self.text)
