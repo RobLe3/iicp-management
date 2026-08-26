@@ -29,6 +29,23 @@ These fixtures establish deterministic project evidence. They do not establish
 independent interoperability, authorize target mutation, or describe a running
 controller.
 
+## Portable first-run preparation
+
+The bootstrap-workflow pack verifies that explicit source evidence is bound to
+the existing assessment, doctor and optional proposal contracts without
+granting mutation authority:
+
+```bash
+python3 tools/run_bootstrap_workflow_conformance.py \
+  fixtures/bootstrap-workflow-conformance-v1.json
+cargo test --locked --test bootstrap_workflow_conformance
+```
+
+Ready assessments require a proposal; incomplete assessments prohibit one.
+Source, proposal and authority tampering fail closed. Passing the pack does not
+establish trust, activate state, contact a target or demonstrate representative
+administrator usability.
+
 ## Policy lifecycle profile
 
 The policy-lifecycle pack covers versioned policy storage, application-binding

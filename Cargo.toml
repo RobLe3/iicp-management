@@ -26,6 +26,7 @@ include = [
     "examples/**",
     "fixtures/**",
     "tools/run_diagnostic_v2_conformance.py",
+    "tools/run_bootstrap_workflow_conformance.py",
     "src/**",
 ]
 

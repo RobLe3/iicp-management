@@ -310,3 +310,43 @@ fn runtime_config_preflight_cli_binds_optional_runtime_evidence() {
         .unwrap();
     assert!(!partial.status.success());
 }
+
+#[test]
+fn first_run_workflow_binds_sources_and_never_authorizes_state() {
+    let config = RuntimeConfigV1::preset(OperatingMode::LocalOnly);
+    let output = prepare_workflow(
+        &config,
+        "runtime:local",
+        None,
+        "operator:local",
+        "controller:local",
+        7,
+        100,
+    )
+    .unwrap();
+    assert_eq!(output.schema_version, BOOTSTRAP_WORKFLOW_SCHEMA);
+    assert_eq!(output.source_digests.len(), 1);
+    assert_eq!(output.proposal.as_ref().unwrap().expected_generation, 7);
+    assert!(!output.authorizes_mutation);
+    assert!(!output.activated);
+    validate_workflow(&output, 100).unwrap();
+
+    let mut tampered = output;
+    tampered.source_digests[0] = format!("sha256:{}", "f".repeat(64));
+    assert_eq!(
+        validate_workflow(&tampered, 100).unwrap_err(),
+        "BOOTSTRAP_WORKFLOW_BINDING_INVALID"
+    );
+}
+
+#[test]
+fn workflow_omits_proposal_until_assessment_is_ready() {
+    let mut value = assessment(EnvironmentMode::Private);
+    value.readiness = AssessmentReadiness::NeedsInput;
+    value.observations[0].status = ObservationStatus::Candidate;
+    let output =
+        workflow_from_assessment(value, "operator:local", "controller:local", 0, 150).unwrap();
+    assert!(output.proposal.is_none());
+    assert!(!output.authorizes_mutation);
+    validate_workflow(&output, 150).unwrap();
+}

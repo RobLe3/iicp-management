@@ -1,0 +1,83 @@
+{
+  "schema_version": "iicp.management-bootstrap-workflow-conformance.v1",
+  "evaluated_at": 150,
+  "cases": [
+    {
+      "id": "BW-01-ready-proposal",
+      "expected": "accept",
+      "workflow": {
+        "schema_version": "iicp.management-bootstrap-workflow.v1",
+        "source_digests": ["sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+        "assessment": {
+          "schema_version": "iicp.management-bootstrap-assessment.v1",
+          "assessment_id": "assessment:portable",
+          "environment_mode": "local_only",
+          "observed_at": 100,
+          "expires_at": 200,
+          "readiness": "ready_for_proposal",
+          "authorizes_mutation": false,
+          "observations": [{"observation_id":"observation:runtime","kind":"runtime","source":"fixture","status":"verified","observed_at":100,"expires_at":200,"evidence_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","details":{}}],
+          "recommendations": [],
+          "required_decisions": []
+        },
+        "doctor": {
+          "schema_version": "iicp.management-doctor-report.v1",
+          "assessment_id": "assessment:portable",
+          "authorizes_mutation": false,
+          "checks": [{"check_id":"assessment","state":"PASS","reason_code":"ASSESSMENT_VALID"}],
+          "overall": "PASS"
+        },
+        "proposal": {"schema_version":"1","bundle_id":"bootstrap:assessment:portable","issuer":"operator:portable","audience":"controller:portable","expected_generation":0,"resources":[],"extensions":[]},
+        "authorizes_mutation": false,
+        "activated": false
+      }
+    },
+    {
+      "id": "BW-02-needs-input-no-proposal",
+      "expected": "accept",
+      "workflow": {
+        "schema_version": "iicp.management-bootstrap-workflow.v1",
+        "source_digests": ["sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+        "assessment": {
+          "schema_version": "iicp.management-bootstrap-assessment.v1",
+          "assessment_id": "assessment:pending",
+          "environment_mode": "private",
+          "observed_at": 100,
+          "expires_at": 200,
+          "readiness": "needs_input",
+          "authorizes_mutation": false,
+          "observations": [{"observation_id":"observation:runtime","kind":"runtime","source":"fixture","status":"candidate","observed_at":100,"expires_at":200,"evidence_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","details":{}}],
+          "recommendations": [],
+          "required_decisions": []
+        },
+        "doctor": {
+          "schema_version": "iicp.management-doctor-report.v1",
+          "assessment_id": "assessment:pending",
+          "authorizes_mutation": false,
+          "checks": [{"check_id":"assessment","state":"PASS","reason_code":"ASSESSMENT_VALID"}],
+          "overall": "WARN"
+        },
+        "authorizes_mutation": false,
+        "activated": false
+      }
+    },
+    {
+      "id": "BW-03-ready-missing-proposal",
+      "expected": "reject",
+      "mutate_from": "BW-01-ready-proposal",
+      "mutation": "remove_proposal"
+    },
+    {
+      "id": "BW-04-source-binding-tamper",
+      "expected": "reject",
+      "mutate_from": "BW-01-ready-proposal",
+      "mutation": "replace_source_digest"
+    },
+    {
+      "id": "BW-05-authority-escalation",
+      "expected": "reject",
+      "mutate_from": "BW-01-ready-proposal",
+      "mutation": "set_authorizes_mutation"
+    }
+  ]
+}

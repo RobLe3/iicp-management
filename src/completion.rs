@@ -70,6 +70,14 @@ pub fn candidates(tokens: &[String]) -> Vec<&'static str> {
             {
                 &["--resource-id", "--runtime-health", "--runtime-target"]
             }
+            Some("bootstrap") if tokens.get(1).map(String::as_str) == Some("prepare") => &[
+                "--controller-generation",
+                "--controller-id",
+                "--operator-id",
+                "--resource-id",
+                "--runtime-health",
+                "--runtime-target",
+            ],
             _ => &["--help", "--json", "--version"],
         }
     } else {
@@ -89,7 +97,13 @@ pub fn candidates(tokens: &[String]) -> Vec<&'static str> {
             ["explain"] => &["decision"],
             ["template"] => &["list", "render", "show"],
             ["impact"] => &["preview"],
-            ["bootstrap"] => &["assess", "export", "from-runtime-config", "proposal"],
+            ["bootstrap"] => &[
+                "assess",
+                "export",
+                "from-runtime-config",
+                "prepare",
+                "proposal",
+            ],
             ["diagnostics"] => &["create", "show", "verify"],
             ["rollout"] => &[
                 "accept-partial",
