@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/contracts/bootstrap-workflow-v1.schema.json",
+  "title": "IICP Management Bootstrap Workflow v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source_digests", "assessment", "doctor", "authorizes_mutation", "activated"],
+  "properties": {
+    "schema_version": { "const": "iicp.management-bootstrap-workflow.v1" },
+    "source_digests": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1024,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+    },
+    "assessment": { "$ref": "bootstrap-assessment-v1.schema.json" },
+    "doctor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "assessment_id", "authorizes_mutation", "checks", "overall"],
+      "properties": {
+        "schema_version": { "const": "iicp.management-doctor-report.v1" },
+        "assessment_id": { "type": "string", "minLength": 1 },
+        "authorizes_mutation": { "const": false },
+        "checks": { "type": "array", "minItems": 1 },
+        "overall": { "enum": ["PASS", "WARN", "FAIL", "NOT_AVAILABLE"] }
+      }
+    },
+    "proposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "bundle_id", "issuer", "audience", "expected_generation", "resources", "extensions"],
+      "properties": {
+        "schema_version": { "const": "1" },
+        "bundle_id": { "type": "string", "minLength": 1 },
+        "issuer": { "type": "string", "minLength": 1 },
+        "audience": { "type": "string", "minLength": 1 },
+        "expected_generation": { "type": "integer", "minimum": 0 },
+        "resources": { "type": "array" },
+        "extensions": { "type": "array" }
+      }
+    },
+    "authorizes_mutation": { "const": false },
+    "activated": { "const": false }
+  }
+}

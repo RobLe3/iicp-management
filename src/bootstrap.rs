@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 pub const BOOTSTRAP_SCHEMA: &str = "iicp.management-bootstrap-assessment.v1";
 pub const DOCTOR_SCHEMA: &str = "iicp.management-doctor-report.v1";
 pub const FRICTION_SCHEMA: &str = "iicp.management-friction-evidence.v1";
+pub const BOOTSTRAP_WORKFLOW_SCHEMA: &str = "iicp.management-bootstrap-workflow.v1";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -112,6 +113,19 @@ pub struct DoctorReportV1 {
     pub authorizes_mutation: bool,
     pub checks: Vec<DoctorCheckV1>,
     pub overall: CheckState,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BootstrapWorkflowV1 {
+    pub schema_version: String,
+    pub source_digests: Vec<String>,
+    pub assessment: BootstrapAssessmentV1,
+    pub doctor: DoctorReportV1,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposal: Option<DesiredStateBundle>,
+    pub authorizes_mutation: bool,
+    pub activated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -408,6 +422,102 @@ pub fn create_proposal(
     };
     validate_bundle(&bundle, &BTreeSet::new(), 1024).map_err(|error| error.to_string())?;
     Ok(bundle)
+}
+
+pub fn prepare_workflow(
+    config: &RuntimeConfigV1,
+    resource_id: &str,
+    runtime: Option<&RuntimeObservationV1>,
+    issuer: &str,
+    audience: &str,
+    generation: u64,
+    now: u64,
+) -> Result<BootstrapWorkflowV1, String> {
+    let assessment = assessment_from_runtime_config(config, resource_id, runtime, now)?;
+    workflow_from_assessment(assessment, issuer, audience, generation, now)
+}
+
+pub fn workflow_from_assessment(
+    assessment: BootstrapAssessmentV1,
+    issuer: &str,
+    audience: &str,
+    generation: u64,
+    now: u64,
+) -> Result<BootstrapWorkflowV1, String> {
+    validate_assessment(&assessment, now)?;
+    let doctor = doctor(&assessment, now, None, None);
+    let proposal = if assessment.readiness == AssessmentReadiness::ReadyForProposal {
+        Some(create_proposal(
+            &assessment,
+            issuer,
+            audience,
+            generation,
+            now,
+        )?)
+    } else {
+        None
+    };
+    let mut source_digests = assessment
+        .observations
+        .iter()
+        .filter_map(|item| item.evidence_digest.clone())
+        .collect::<Vec<_>>();
+    source_digests.sort();
+    source_digests.dedup();
+    let workflow = BootstrapWorkflowV1 {
+        schema_version: BOOTSTRAP_WORKFLOW_SCHEMA.into(),
+        source_digests,
+        assessment,
+        doctor,
+        proposal,
+        authorizes_mutation: false,
+        activated: false,
+    };
+    validate_workflow(&workflow, now)?;
+    Ok(workflow)
+}
+
+pub fn validate_workflow(value: &BootstrapWorkflowV1, now: u64) -> Result<(), String> {
+    if value.schema_version != BOOTSTRAP_WORKFLOW_SCHEMA
+        || value.authorizes_mutation
+        || value.activated
+        || value.source_digests.is_empty()
+        || value.source_digests.len() > 1024
+        || value.source_digests.iter().any(|item| !valid_digest(item))
+    {
+        return Err("BOOTSTRAP_WORKFLOW_INVALID".into());
+    }
+    validate_assessment(&value.assessment, now)?;
+    let mut expected_digests = value
+        .assessment
+        .observations
+        .iter()
+        .filter_map(|item| item.evidence_digest.clone())
+        .collect::<Vec<_>>();
+    expected_digests.sort();
+    expected_digests.dedup();
+    if value.source_digests != expected_digests
+        || value.doctor.schema_version != DOCTOR_SCHEMA
+        || value.doctor.assessment_id != value.assessment.assessment_id
+        || value.doctor.authorizes_mutation
+        || value.doctor.checks.is_empty()
+    {
+        return Err("BOOTSTRAP_WORKFLOW_BINDING_INVALID".into());
+    }
+    match (&value.assessment.readiness, &value.proposal) {
+        (AssessmentReadiness::ReadyForProposal, Some(proposal)) => {
+            validate_import(proposal)?;
+            if proposal.bundle_id != format!("bootstrap:{}", value.assessment.assessment_id) {
+                return Err("BOOTSTRAP_WORKFLOW_PROPOSAL_INVALID".into());
+            }
+        }
+        (AssessmentReadiness::ReadyForProposal, None) => {
+            return Err("BOOTSTRAP_WORKFLOW_PROPOSAL_REQUIRED".into())
+        }
+        (_, Some(_)) => return Err("BOOTSTRAP_WORKFLOW_PROPOSAL_FORBIDDEN".into()),
+        (_, None) => {}
+    }
+    Ok(())
 }
 
 pub fn validate_import(bundle: &DesiredStateBundle) -> Result<String, String> {
