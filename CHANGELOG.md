@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.9.0-rc.1 — unpublished candidate
+## 0.9.0 — 2026-08-26 developer preview
 
 - Convert an explicit canonical runtime configuration into the existing
   non-authorizing bootstrap assessment and desired-state proposal path.
