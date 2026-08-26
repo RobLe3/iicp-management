@@ -29,7 +29,8 @@ command -v cargo-audit >/dev/null || fail "cargo-audit 0.22.2 is required"
 [[ "$(cargo audit --version)" == *"0.22.2"* ]] || fail "cargo-audit 0.22.2 is required"
 
 python3 scripts/check_dependency_policy.py
-python3 -m unittest scripts/test_dependency_policy.py scripts/test_release_manifest.py scripts/test_release_readiness.py
+python3 -m unittest scripts/test_dependency_policy.py scripts/test_release_manifest.py scripts/test_release_readiness.py tools/test_diagnostic_v2_conformance.py
+python3 tools/run_diagnostic_v2_conformance.py fixtures/diagnostic-bundle-conformance-v2.json >/dev/null
 cargo metadata --locked --format-version 1 >/dev/null
 advisory="$cleanup_dir/advisory-db"
 git clone --quiet --depth 1 https://github.com/RustSec/advisory-db.git "$advisory"
@@ -46,7 +47,7 @@ tar -tzf "$crate" >"$listing"
 for required in Cargo.lock Cargo.toml README.md COMPATIBILITY.md CHANGELOG.md CONFORMANCE.md LICENSE "docs/RELEASE_NOTES_$version.md"; do
   grep -Eq "/${required}$" "$listing" || fail "package is missing $required"
 done
-for required in contracts/management-profile-v1.schema.json fixtures/management-profile-conformance-v1.json examples/finance/management-profile.json docs/ADR-008-single-crate-developer-preview-release.md contracts/diagnostic-bundle-v1.schema.json fixtures/diagnostic-bundle-conformance-v1.json docs/ADR-009-diagnostic-bundles-are-minimized-evidence.md docs/DIAGNOSTIC_BUNDLE_WORKFLOW.md docs/LOCAL_MANAGEMENT_EVALUATION.md contracts/administrator-trial-v2.schema.json fixtures/administrator-trial-conformance-v2.json examples/trials/policy-simulation-definition.json docs/ADR-010-administrator-trial-evidence-is-non-authorizing.md docs/ADMINISTRATOR_TRIAL_WORKFLOW.md; do
+for required in contracts/management-profile-v1.schema.json fixtures/management-profile-conformance-v1.json examples/finance/management-profile.json docs/ADR-008-single-crate-developer-preview-release.md contracts/diagnostic-bundle-v1.schema.json fixtures/diagnostic-bundle-conformance-v1.json docs/ADR-009-diagnostic-bundles-are-minimized-evidence.md docs/DIAGNOSTIC_BUNDLE_WORKFLOW.md docs/LOCAL_MANAGEMENT_EVALUATION.md contracts/administrator-trial-v2.schema.json fixtures/administrator-trial-conformance-v2.json examples/trials/policy-simulation-definition.json docs/ADR-010-administrator-trial-evidence-is-non-authorizing.md docs/ADMINISTRATOR_TRIAL_WORKFLOW.md contracts/diagnostic-bundle-v2.schema.json fixtures/diagnostic-bundle-conformance-v2.json fixtures/runtime-health-ready-v1.json docs/ADR-013-runtime-health-is-non-authorizing-observation.md tools/run_diagnostic_v2_conformance.py; do
   grep -Eq "/${required}$" "$listing" || fail "package is missing $required"
 done
 
@@ -95,6 +96,29 @@ json.dump(value["diagnostic_bundle"],open(sys.argv[2],"w",encoding="utf-8"),inde
 PY
 "$install_root/bin/iicp-management" diagnostics verify "$diagnostic" >/dev/null
 "$install_root/bin/iicp-management" diagnostics show "$diagnostic" >/dev/null
+runtime_assessment="$cleanup_dir/runtime-assessment.json"
+runtime_diagnostic="$cleanup_dir/runtime-diagnostic.json"
+python3 - "$runtime_assessment" <<'PY'
+import json,sys,time
+now=int(time.time())
+json.dump({"schema_version":"iicp.management-bootstrap-assessment.v1","assessment_id":"assessment:packaged-runtime","environment_mode":"local_only","observed_at":now-1,"expires_at":now+300,"readiness":"ready_for_proposal","authorizes_mutation":False,"observations":[],"recommendations":[],"required_decisions":[]},open(sys.argv[1],"w",encoding="utf-8"))
+PY
+"$install_root/bin/iicp-management" diagnostics create "$runtime_assessment" --runtime-health "$source_dir/fixtures/runtime-health-ready-v1.json" --runtime-target "node:private-package-target" --output "$runtime_diagnostic" >/dev/null
+"$install_root/bin/iicp-management" diagnostics verify "$runtime_diagnostic" >/dev/null
+"$install_root/bin/iicp-management" diagnostics show "$runtime_diagnostic" >/dev/null
+python3 - "$runtime_diagnostic" <<'PY'
+import json,sys
+value=json.load(open(sys.argv[1],encoding="utf-8")); encoded=json.dumps(value,sort_keys=True)
+assert value["schema_version"] == "iicp.management-diagnostic-bundle.v2"
+assert len(value["artifacts"]) == 6
+assert value["authorizes_mutation"] is False
+assert "node:private-package-target" not in encoded and "process_epoch" not in encoded and '"pid"' not in encoded
+PY
+set +e
+"$install_root/bin/iicp-management" diagnostics create "$runtime_assessment" --runtime-health "$source_dir/fixtures/runtime-health-ready-v1.json" --output "$cleanup_dir/partial-runtime.json" >/dev/null 2>&1
+partial_runtime_status=$?
+set -e
+[[ $partial_runtime_status -ne 0 ]] || fail "partial runtime diagnostic flags did not fail closed"
 authorized="$cleanup_dir/authorized.json"
 "$install_root/bin/iicp-management" --json bootstrap sandbox --exercise authorized-local >"$authorized"
 python3 - "$authorized" <<'PY'
