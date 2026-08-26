@@ -92,6 +92,15 @@ inside volatile build output. Set `IICP_KEEP_FAILED_CARGO_TARGET=1` only when a
 failed target is needed for diagnosis. Ordinary interactive Cargo commands are
 unchanged.
 
+Before committing a GitHub Actions change, run:
+
+```bash
+./scripts/check_ci_workflows.sh
+```
+
+The check uses a pinned semantic workflow linter. A workflow that produces no
+jobs is a failure, not an empty green check set.
+
 The conformance runner accepts an optional fixture path:
 
 ```bash
