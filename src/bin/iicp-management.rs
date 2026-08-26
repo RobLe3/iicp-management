@@ -1,11 +1,12 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
+use iicp_client::runtime_config::RuntimeConfigV1;
 use iicp_management_core::adapters::{validate_adapter_inspection, AdapterInspectionV1};
 use iicp_management_core::apply_gate::{preview_apply, LocalApplyGateV1};
 use iicp_management_core::bootstrap::{
-    create_proposal, doctor, validate_assessment, validate_friction, validate_import,
-    AssessmentReadiness, BootstrapAssessmentV1, BootstrapRecommendationV1, CheckState,
-    EnvironmentMode, EnvironmentObservationV1, FrictionEvidenceV1, ObservationStatus,
-    BOOTSTRAP_SCHEMA, FRICTION_SCHEMA,
+    assessment_from_runtime_config, create_proposal, doctor, validate_assessment,
+    validate_friction, validate_import, AssessmentReadiness, BootstrapAssessmentV1,
+    BootstrapRecommendationV1, CheckState, EnvironmentMode, EnvironmentObservationV1,
+    FrictionEvidenceV1, ObservationStatus, BOOTSTRAP_SCHEMA, FRICTION_SCHEMA,
 };
 use iicp_management_core::controller::{
     attach_adapter_inspection, inspect_controller_database, validate_plan_submission, Controller,
@@ -98,6 +99,28 @@ fn read_runtime_health(path: &str) -> Result<Vec<u8>, String> {
         return Err("RUNTIME_HEALTH_INPUT_TOO_LARGE".into());
     }
     Ok(bytes)
+}
+
+fn read_runtime_config(path: &str) -> Result<RuntimeConfigV1, String> {
+    const MAX_RUNTIME_CONFIG_BYTES: usize = 1024 * 1024;
+    let mut bytes = Vec::new();
+    if path == "-" {
+        io::stdin()
+            .take((MAX_RUNTIME_CONFIG_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)
+            .map_err(|_| "INPUT_READ_FAILED:-".to_string())?;
+    } else {
+        fs::File::open(path)
+            .map_err(|_| format!("INPUT_READ_FAILED:{path}"))?
+            .take((MAX_RUNTIME_CONFIG_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)
+            .map_err(|_| format!("INPUT_READ_FAILED:{path}"))?;
+    }
+    if bytes.len() > MAX_RUNTIME_CONFIG_BYTES {
+        return Err("RUNTIME_CONFIG_INPUT_TOO_LARGE".into());
+    }
+    let json = std::str::from_utf8(&bytes).map_err(|_| "RUNTIME_CONFIG_JSON_INVALID")?;
+    RuntimeConfigV1::from_json(json).map_err(|_| "RUNTIME_CONFIG_SCHEMA_INVALID".into())
 }
 
 fn write_private_json<T: Serialize>(path: &str, value: &T) -> Result<(), String> {
@@ -209,6 +232,7 @@ request-recovery <socket-or-pipe> <recovery-request.json> <--confirm operation-i
 execute-recovery <socket-or-pipe> <recovery-request.json> <--confirm operation-id|--non-interactive>\n\
 rollout <validate|create|status|pause|resume|run-batch|retry-target|accept-partial|assess-drift|drift-status|propose-reconcile|reconcile-target> ...\n\
 bootstrap <assess|export> <assessment.json>\n\
+bootstrap from-runtime-config <runtime-config.json|-> --resource-id <id> [--runtime-health <snapshot.json|-> --runtime-target <id>]\n\
 bootstrap proposal <assessment.json> <issuer> <audience> <generation>\n\
 bootstrap import <desired-state.json>\n\
 bootstrap sandbox [--exercise authorized-local] [--scenario success|verification-failure|interrupted-resume]\n\
@@ -653,6 +677,57 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
             });
         }
         Some("bootstrap") => match args.get(1).map(String::as_str) {
+            Some("from-runtime-config") => {
+                let source = args.get(2).ok_or("USAGE_INVALID")?;
+                let mut resource_id = None;
+                let mut runtime_health = None;
+                let mut runtime_target = None;
+                let mut index = 3;
+                while index < args.len() {
+                    let option = args[index].as_str();
+                    index += 1;
+                    let value = args.get(index).ok_or("USAGE_INVALID")?.clone();
+                    match option {
+                        "--resource-id" => resource_id = Some(value),
+                        "--runtime-health" => runtime_health = Some(value),
+                        "--runtime-target" => runtime_target = Some(value),
+                        _ => return Err("USAGE_INVALID".into()),
+                    }
+                    index += 1;
+                }
+                let resource_id = resource_id.ok_or("USAGE_INVALID")?;
+                if runtime_health.is_some() != runtime_target.is_some()
+                    || (source == "-" && runtime_health.as_deref() == Some("-"))
+                {
+                    return Err("USAGE_INVALID".into());
+                }
+                let config = read_runtime_config(source)?;
+                let runtime = match (runtime_health, runtime_target) {
+                    (Some(path), Some(target)) => {
+                        let bytes = read_runtime_health(&path)?;
+                        let snapshot = parse_runtime_health(&bytes)?;
+                        Some(project_runtime_health(
+                            &snapshot,
+                            &target,
+                            Controller::now(),
+                        )?)
+                    }
+                    (None, None) => None,
+                    _ => unreachable!(),
+                };
+                let assessment = assessment_from_runtime_config(
+                    &config,
+                    &resource_id,
+                    runtime.as_ref(),
+                    Controller::now(),
+                )?;
+                let readiness = assessment.readiness.clone();
+                emit(&assessment, json_output, || {
+                    format!(
+                        "Runtime bootstrap assessment: {readiness:?}; review before creating a proposal"
+                    )
+                });
+            }
             Some("assess") | Some("export") => {
                 let a = require(&args[2..], 1)?;
                 let assessment: BootstrapAssessmentV1 = read(&a[0])?;

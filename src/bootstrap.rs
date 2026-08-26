@@ -1,4 +1,6 @@
+use crate::runtime_observation::{validate_runtime_observation, RuntimeObservationV1};
 use crate::{digest, validate_bundle, DesiredStateBundle, ManagedResource};
+use iicp_client::runtime_config::{OperatingMode, RuntimeConfigV1};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -126,6 +128,103 @@ pub struct FrictionEvidenceV1 {
     pub outcome: String,
     pub representative: bool,
     pub authorizes_mutation: bool,
+}
+
+pub fn assessment_from_runtime_config(
+    config: &RuntimeConfigV1,
+    resource_id: &str,
+    runtime: Option<&RuntimeObservationV1>,
+    now: u64,
+) -> Result<BootstrapAssessmentV1, String> {
+    if resource_id.trim().is_empty() || resource_id.len() > 256 || !config.validate().is_empty() {
+        return Err("BOOTSTRAP_RUNTIME_CONFIG_INVALID".into());
+    }
+    if let Some(runtime) = runtime {
+        validate_runtime_observation(runtime, now)?;
+        if runtime.target_id != resource_id {
+            return Err("BOOTSTRAP_RUNTIME_TARGET_MISMATCH".into());
+        }
+    }
+
+    let config_digest = digest(config).map_err(|error| error.to_string())?;
+    let short_digest = config_digest
+        .strip_prefix("sha256:")
+        .and_then(|value| value.get(..16))
+        .ok_or("BOOTSTRAP_RUNTIME_CONFIG_DIGEST_INVALID")?
+        .to_string();
+    let environment_mode = match config.mode {
+        OperatingMode::Public => EnvironmentMode::Public,
+        OperatingMode::Private => EnvironmentMode::Private,
+        OperatingMode::FederatedPrivate => EnvironmentMode::FederatedPrivate,
+        OperatingMode::LocalOnly => EnvironmentMode::LocalOnly,
+        OperatingMode::Custom => EnvironmentMode::Custom,
+    };
+    let expires_at = now
+        .checked_add(300)
+        .ok_or("BOOTSTRAP_ASSESSMENT_TIME_INVALID")?;
+    let mut observations = vec![EnvironmentObservationV1 {
+        observation_id: format!("runtime-config:{short_digest}"),
+        kind: "runtime_config".into(),
+        source: "iicp.runtime-config.v1".into(),
+        status: ObservationStatus::Verified,
+        observed_at: now,
+        expires_at,
+        evidence_digest: Some(config_digest),
+        details: serde_json::json!({
+            "schema_version": config.schema_version,
+            "mode": config.mode,
+            "directory_source": config.directory.source,
+        }),
+    }];
+    if let Some(runtime) = runtime {
+        let runtime_short = runtime
+            .source_digest
+            .strip_prefix("sha256:")
+            .and_then(|value| value.get(..16))
+            .ok_or("BOOTSTRAP_RUNTIME_DIGEST_INVALID")?;
+        observations.push(EnvironmentObservationV1 {
+            observation_id: format!("runtime-health:{runtime_short}"),
+            kind: "runtime_health".into(),
+            source: runtime.evidence_source.clone(),
+            status: ObservationStatus::Verified,
+            observed_at: now,
+            expires_at,
+            evidence_digest: Some(runtime.source_digest.clone()),
+            details: serde_json::json!({
+                "evidence_state": runtime.evidence_state,
+                "effective_state": runtime.effective_state,
+                "reported_liveness": runtime.reported_liveness,
+                "reported_readiness": runtime.reported_readiness,
+                "reason_codes": runtime.reason_codes,
+            }),
+        });
+    }
+
+    let assessment = BootstrapAssessmentV1 {
+        schema_version: BOOTSTRAP_SCHEMA.into(),
+        assessment_id: format!("runtime-config:{short_digest}"),
+        environment_mode,
+        observed_at: now,
+        expires_at,
+        readiness: AssessmentReadiness::ReadyForProposal,
+        authorizes_mutation: false,
+        observations,
+        recommendations: vec![BootstrapRecommendationV1 {
+            recommendation_id: format!("manage:{resource_id}"),
+            reason: "manage the validated canonical runtime configuration".into(),
+            resource: Some(ManagedResource {
+                resource_id: resource_id.into(),
+                kind: "RuntimeConfigV1".into(),
+                desired: serde_json::to_value(config)
+                    .map_err(|_| "BOOTSTRAP_RUNTIME_CONFIG_SERIALIZATION_FAILED")?,
+                secret_refs: Default::default(),
+            }),
+            requires_decision_ids: Vec::new(),
+        }],
+        required_decisions: Vec::new(),
+    };
+    validate_assessment(&assessment, now)?;
+    Ok(assessment)
 }
 
 pub fn validate_assessment(value: &BootstrapAssessmentV1, now: u64) -> Result<(), String> {
