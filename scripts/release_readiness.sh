@@ -22,6 +22,11 @@ import tomllib
 print(tomllib.load(open('Cargo.toml','rb'))['package']['version'])
 PY
 )"
+msrv="$(python3 - <<'PY'
+import tomllib
+print(tomllib.load(open('Cargo.toml','rb'))['package']['rust-version'])
+PY
+)"
 tag="v$version"
 [[ -z "$(git tag --list "$tag")" ]] || fail "tag $tag already exists locally"
 if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then fail "tag $tag already exists on origin"; fi
@@ -33,6 +38,11 @@ python3 -m unittest scripts/test_dependency_policy.py scripts/test_release_manif
 python3 tools/run_diagnostic_v2_conformance.py fixtures/diagnostic-bundle-conformance-v2.json >/dev/null
 python3 tools/run_bootstrap_workflow_conformance.py fixtures/bootstrap-workflow-conformance-v1.json >/dev/null
 cargo metadata --locked --format-version 1 >/dev/null
+command -v rustup >/dev/null || fail "rustup is required to verify declared Rust $msrv"
+msrv_cargo="$(rustup which --toolchain "$msrv" cargo 2>/dev/null)" || fail "Rust $msrv toolchain is not installed"
+msrv_rustc="$(rustup which --toolchain "$msrv" rustc 2>/dev/null)" || fail "Rust $msrv compiler is not installed"
+RUSTC="$msrv_rustc" CARGO_TARGET_DIR="$cleanup_dir/msrv-target" \
+  "$msrv_cargo" check --locked --all-targets
 advisory="$cleanup_dir/advisory-db"
 git clone --quiet --depth 1 https://github.com/RustSec/advisory-db.git "$advisory"
 cargo audit --no-fetch --db "$advisory"
