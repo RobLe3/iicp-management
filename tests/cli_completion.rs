@@ -20,6 +20,11 @@ fn candidates_are_static() {
             vec!["--candidates"],
         ),
         (vec!["explain", ""], vec!["decision"]),
+        (vec!["bootstrap", "pr"], vec!["prepare"]),
+        (
+            vec!["bootstrap", "prepare", "runtime.json", "--controller-"],
+            vec!["--controller-generation", "--controller-id"],
+        ),
     ] {
         let tokens = t.into_iter().map(String::from).collect::<Vec<_>>();
         let got = candidates(&tokens);

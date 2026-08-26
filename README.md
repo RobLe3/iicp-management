@@ -342,6 +342,11 @@ discovered components remain candidates until their evidence is verified.
 iicp-management bootstrap assess assessment.json
 iicp-management --json bootstrap from-runtime-config runtime-config.json \
   --resource-id runtime:local > assessment.json
+iicp-management --json bootstrap prepare runtime-config.json \
+  --resource-id runtime:local \
+  --operator-id operator:local \
+  --controller-id controller:local \
+  --controller-generation 0 > preparation.json
 iicp-management doctor assessment.json controller.db adapter-inspection.json
 iicp-management bootstrap proposal assessment.json operator:local controller:local 0
 iicp-management bootstrap import desired-state.json
@@ -399,6 +404,13 @@ Add paired `--runtime-health` and `--runtime-target` options to bind a supplied
 runtime snapshot to the same resource. The command does not execute another
 program, contact a Directory, read node credentials or activate the generated
 proposal. At most one input may use standard input.
+
+`bootstrap prepare` composes the same assessment, doctor projection and
+desired-state proposal in one typed, non-authorizing envelope. It records the
+source digests and omits a proposal unless the assessment is ready. The output
+still requires the existing local authorization and apply workflow; successful
+preparation is not activation or target convergence. `iicp-management
+--version` reports the exact installed package version for installation checks.
 
 Create a portable support record from the same validated inputs:
 

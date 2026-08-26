@@ -3,7 +3,7 @@ use iicp_client::runtime_config::RuntimeConfigV1;
 use iicp_management_core::adapters::{validate_adapter_inspection, AdapterInspectionV1};
 use iicp_management_core::apply_gate::{preview_apply, LocalApplyGateV1};
 use iicp_management_core::bootstrap::{
-    assessment_from_runtime_config, create_proposal, doctor, validate_assessment,
+    assessment_from_runtime_config, create_proposal, doctor, prepare_workflow, validate_assessment,
     validate_friction, validate_import, AssessmentReadiness, BootstrapAssessmentV1,
     BootstrapRecommendationV1, CheckState, EnvironmentMode, EnvironmentObservationV1,
     FrictionEvidenceV1, ObservationStatus, BOOTSTRAP_SCHEMA, FRICTION_SCHEMA,
@@ -233,6 +233,7 @@ execute-recovery <socket-or-pipe> <recovery-request.json> <--confirm operation-i
 rollout <validate|create|status|pause|resume|run-batch|retry-target|accept-partial|assess-drift|drift-status|propose-reconcile|reconcile-target> ...\n\
 bootstrap <assess|export> <assessment.json>\n\
 bootstrap from-runtime-config <runtime-config.json|-> --resource-id <id> [--runtime-health <snapshot.json|-> --runtime-target <id>]\n\
+bootstrap prepare <runtime-config.json|-> --resource-id <id> --operator-id <id> --controller-id <id> --controller-generation <n> [--runtime-health <snapshot.json|-> --runtime-target <id>]\n\
 bootstrap proposal <assessment.json> <issuer> <audience> <generation>\n\
 bootstrap import <desired-state.json>\n\
 bootstrap sandbox [--exercise authorized-local] [--scenario success|verification-failure|interrupted-resume]\n\
@@ -677,6 +678,72 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
             });
         }
         Some("bootstrap") => match args.get(1).map(String::as_str) {
+            Some("prepare") => {
+                let source = args.get(2).ok_or("USAGE_INVALID")?;
+                let mut resource_id = None;
+                let mut operator_id = None;
+                let mut controller_id = None;
+                let mut controller_generation = None;
+                let mut runtime_health = None;
+                let mut runtime_target = None;
+                let mut index = 3;
+                while index < args.len() {
+                    let option = args[index].as_str();
+                    index += 1;
+                    let value = args.get(index).ok_or("USAGE_INVALID")?.clone();
+                    match option {
+                        "--resource-id" => resource_id = Some(value),
+                        "--operator-id" => operator_id = Some(value),
+                        "--controller-id" => controller_id = Some(value),
+                        "--controller-generation" => {
+                            controller_generation =
+                                Some(value.parse::<u64>().map_err(|_| "GENERATION_INVALID")?)
+                        }
+                        "--runtime-health" => runtime_health = Some(value),
+                        "--runtime-target" => runtime_target = Some(value),
+                        _ => return Err("USAGE_INVALID".into()),
+                    }
+                    index += 1;
+                }
+                let resource_id = resource_id.ok_or("USAGE_INVALID")?;
+                let operator_id = operator_id.ok_or("USAGE_INVALID")?;
+                let controller_id = controller_id.ok_or("USAGE_INVALID")?;
+                let controller_generation = controller_generation.ok_or("USAGE_INVALID")?;
+                if runtime_health.is_some() != runtime_target.is_some()
+                    || (source == "-" && runtime_health.as_deref() == Some("-"))
+                {
+                    return Err("USAGE_INVALID".into());
+                }
+                let config = read_runtime_config(source)?;
+                let runtime = match (runtime_health, runtime_target) {
+                    (Some(path), Some(target)) => {
+                        let bytes = read_runtime_health(&path)?;
+                        let snapshot = parse_runtime_health(&bytes)?;
+                        Some(project_runtime_health(
+                            &snapshot,
+                            &target,
+                            Controller::now(),
+                        )?)
+                    }
+                    (None, None) => None,
+                    _ => unreachable!(),
+                };
+                let output = prepare_workflow(
+                    &config,
+                    &resource_id,
+                    runtime.as_ref(),
+                    &operator_id,
+                    &controller_id,
+                    controller_generation,
+                    Controller::now(),
+                )?;
+                let readiness = output.assessment.readiness.clone();
+                emit(&output, json_output, || {
+                    format!(
+                        "Bootstrap preparation: {readiness:?}; no state activated or authorized"
+                    )
+                });
+            }
             Some("from-runtime-config") => {
                 let source = args.get(2).ok_or("USAGE_INVALID")?;
                 let mut resource_id = None;
@@ -1747,6 +1814,10 @@ fn run(args: &[String], json_output: bool) -> Result<(), String> {
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1).collect::<Vec<_>>();
+    if matches!(args.as_slice(), [value] if value == "--version" || value == "-V") {
+        println!("iicp-management {}", env!("CARGO_PKG_VERSION"));
+        return ExitCode::SUCCESS;
+    }
     let json_output = args.first().map(String::as_str) == Some("--json");
     if json_output {
         args.remove(0);
