@@ -340,6 +340,8 @@ discovered components remain candidates until their evidence is verified.
 
 ```bash
 iicp-management bootstrap assess assessment.json
+iicp-management --json bootstrap from-runtime-config runtime-config.json \
+  --resource-id runtime:local > assessment.json
 iicp-management doctor assessment.json controller.db adapter-inspection.json
 iicp-management bootstrap proposal assessment.json operator:local controller:local 0
 iicp-management bootstrap import desired-state.json
@@ -380,6 +382,23 @@ the clean-install and evidence guide.
 inputs. Import and proposal creation do not activate state. The sandbox uses
 disposable synthetic evidence and labels its friction record as a project
 rehearsal, not representative administrator evidence.
+
+An existing Rust node can supply a canonical, secret-free configuration without
+giving the management process access to its identity file:
+
+```bash
+iicp-node config migrate-node --node local > runtime-config.json
+iicp-management --json bootstrap from-runtime-config runtime-config.json \
+  --resource-id runtime:local > assessment.json
+iicp-management doctor assessment.json
+iicp-management bootstrap proposal assessment.json \
+  operator:local controller:local 0 > desired-state.json
+```
+
+Add paired `--runtime-health` and `--runtime-target` options to bind a supplied
+runtime snapshot to the same resource. The command does not execute another
+program, contact a Directory, read node credentials or activate the generated
+proposal. At most one input may use standard input.
 
 Create a portable support record from the same validated inputs:
 

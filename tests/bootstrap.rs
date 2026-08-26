@@ -1,6 +1,10 @@
+use iicp_client::runtime_config::{OperatingMode, RuntimeConfigV1};
 use iicp_management_core::bootstrap::*;
+use iicp_management_core::runtime_observation::{parse_runtime_health, project_runtime_health};
 use iicp_management_core::ManagedResource;
 use serde_json::json;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 fn assessment(mode: EnvironmentMode) -> BootstrapAssessmentV1 {
     BootstrapAssessmentV1 {
@@ -163,4 +167,146 @@ fn project_rehearsal_cannot_claim_representative_evidence() {
         validate_friction(&value).unwrap_err(),
         "FRICTION_REPRESENTATIVE_CLAIM_INVALID"
     );
+}
+
+#[test]
+fn runtime_config_becomes_a_ready_non_authorizing_assessment() {
+    let config = RuntimeConfigV1::preset(OperatingMode::LocalOnly);
+    let value = assessment_from_runtime_config(&config, "runtime:local", None, 100).unwrap();
+    assert_eq!(value.environment_mode, EnvironmentMode::LocalOnly);
+    assert_eq!(value.readiness, AssessmentReadiness::ReadyForProposal);
+    assert!(!value.authorizes_mutation);
+    assert_eq!(value.recommendations.len(), 1);
+    assert_eq!(
+        value.recommendations[0].resource.as_ref().unwrap().kind,
+        "RuntimeConfigV1"
+    );
+    let proposal = create_proposal(&value, "operator:local", "controller:local", 0, 100).unwrap();
+    assert_eq!(proposal.resources.len(), 1);
+    assert_eq!(proposal.resources[0].desired["mode"], "local_only");
+}
+
+#[test]
+fn runtime_config_preflight_rejects_invalid_config_and_target_mismatch() {
+    let mut config = RuntimeConfigV1::preset(OperatingMode::LocalOnly);
+    config.schema_version = 99;
+    assert_eq!(
+        assessment_from_runtime_config(&config, "runtime:local", None, 100).unwrap_err(),
+        "BOOTSTRAP_RUNTIME_CONFIG_INVALID"
+    );
+
+    let config = RuntimeConfigV1::preset(OperatingMode::LocalOnly);
+    let snapshot =
+        parse_runtime_health(include_bytes!("../fixtures/runtime-health-ready-v1.json")).unwrap();
+    let runtime = project_runtime_health(&snapshot, "runtime:other", 1_787_700_000).unwrap();
+    assert_eq!(
+        assessment_from_runtime_config(&config, "runtime:local", Some(&runtime), 1_787_700_000)
+            .unwrap_err(),
+        "BOOTSTRAP_RUNTIME_TARGET_MISMATCH"
+    );
+}
+
+#[test]
+fn runtime_config_preflight_cli_supports_file_and_bounded_stdin() {
+    let config = RuntimeConfigV1::preset(OperatingMode::LocalOnly);
+    let file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(file.path(), serde_json::to_vec(&config).unwrap()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_iicp-management"))
+        .args([
+            "--json",
+            "bootstrap",
+            "from-runtime-config",
+            file.path().to_str().unwrap(),
+            "--resource-id",
+            "runtime:file",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["readiness"], "ready_for_proposal");
+    assert_eq!(value["authorizes_mutation"], false);
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_iicp-management"))
+        .args([
+            "--json",
+            "bootstrap",
+            "from-runtime-config",
+            "-",
+            "--resource-id",
+            "runtime:stdin",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&serde_json::to_vec(&config).unwrap())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        value["recommendations"][0]["resource"]["resource_id"],
+        "runtime:stdin"
+    );
+}
+
+#[test]
+fn runtime_config_preflight_cli_binds_optional_runtime_evidence() {
+    let config = RuntimeConfigV1::preset(OperatingMode::LocalOnly);
+    let config_file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(config_file.path(), serde_json::to_vec(&config).unwrap()).unwrap();
+    let runtime_file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(
+        runtime_file.path(),
+        include_bytes!("../fixtures/runtime-health-ready-v1.json"),
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_iicp-management"))
+        .args([
+            "--json",
+            "bootstrap",
+            "from-runtime-config",
+            config_file.path().to_str().unwrap(),
+            "--resource-id",
+            "runtime:local",
+            "--runtime-health",
+            runtime_file.path().to_str().unwrap(),
+            "--runtime-target",
+            "runtime:local",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let value: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(value["observations"].as_array().unwrap().len(), 2);
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(!text.contains("fixture-process-epoch"));
+    assert!(!text.contains("4242"));
+
+    let partial = Command::new(env!("CARGO_BIN_EXE_iicp-management"))
+        .args([
+            "bootstrap",
+            "from-runtime-config",
+            config_file.path().to_str().unwrap(),
+            "--resource-id",
+            "runtime:local",
+            "--runtime-health",
+            runtime_file.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!partial.status.success());
 }

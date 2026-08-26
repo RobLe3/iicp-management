@@ -65,6 +65,11 @@ pub fn candidates(tokens: &[String]) -> Vec<&'static str> {
                 "--runtime-health",
                 "--runtime-target",
             ],
+            Some("bootstrap")
+                if tokens.get(1).map(String::as_str) == Some("from-runtime-config") =>
+            {
+                &["--resource-id", "--runtime-health", "--runtime-target"]
+            }
             _ => &["--help", "--json", "--version"],
         }
     } else {
@@ -84,7 +89,7 @@ pub fn candidates(tokens: &[String]) -> Vec<&'static str> {
             ["explain"] => &["decision"],
             ["template"] => &["list", "render", "show"],
             ["impact"] => &["preview"],
-            ["bootstrap"] => &["assess", "export", "proposal"],
+            ["bootstrap"] => &["assess", "export", "from-runtime-config", "proposal"],
             ["diagnostics"] => &["create", "show", "verify"],
             ["rollout"] => &[
                 "accept-partial",
