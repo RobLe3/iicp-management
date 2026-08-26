@@ -176,15 +176,36 @@ fn process(controller: &mut Controller, host: &mut Option<AdapterHost>, line: &s
     }
 }
 #[cfg(unix)]
+fn bind_owner_only(socket: &Path) -> Result<std::os::unix::net::UnixListener, String> {
+    use std::os::unix::{fs::PermissionsExt, net::UnixListener};
+
+    // UnixListener::bind creates a socket with mode 0777 filtered by the
+    // process umask. This controller is still single-threaded at startup, so
+    // temporarily narrowing the umask avoids a world-readable interval before
+    // chmod. The explicit chmod remains defense in depth.
+    struct UmaskGuard(libc::mode_t);
+    impl Drop for UmaskGuard {
+        fn drop(&mut self) {
+            unsafe { libc::umask(self.0) };
+        }
+    }
+
+    let guard = UmaskGuard(unsafe { libc::umask(0o177) });
+    let listener = UnixListener::bind(socket).map_err(|e| e.to_string());
+    drop(guard);
+    let listener = listener?;
+    fs::set_permissions(socket, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
+    Ok(listener)
+}
+
+#[cfg(unix)]
 fn serve(
     mut controller: Controller,
     mut host: Option<AdapterHost>,
     socket: &Path,
 ) -> Result<(), String> {
-    use std::os::unix::{fs::PermissionsExt, net::UnixListener};
     let _ = fs::remove_file(socket);
-    let listener = UnixListener::bind(socket).map_err(|e| e.to_string())?;
-    fs::set_permissions(socket, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
+    let listener = bind_owner_only(socket)?;
     for stream in listener.incoming() {
         let mut stream = stream.map_err(|e| e.to_string())?;
         let mut line = String::new();

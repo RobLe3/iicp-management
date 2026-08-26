@@ -6,6 +6,8 @@
   the declared Rust 1.86 minimum.
 - Add an exact declared-toolchain locked build to release readiness so newer
   host compilers cannot conceal future MSRV drift.
+- Create Unix controller sockets with owner-only permissions at bind time
+  instead of relying on a bind-then-chmod sequence.
 - Preserve the 0.10.0 contracts, first-run behavior and non-authorizing
   boundaries without a wire or serialized-behavior change.
 
