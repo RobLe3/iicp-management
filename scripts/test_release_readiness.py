@@ -10,6 +10,12 @@ class ReleaseLaneContract(unittest.TestCase):
     def test_checks_policy_and_audit_before_compilation(self):
         policy=self.text.index('scripts/check_dependency_policy.py'); audit=self.text.index('cargo audit --no-fetch'); test=self.text.index('cargo test --locked')
         self.assertLess(policy,audit); self.assertLess(audit,test)
+    def test_checks_locked_graph_with_the_declared_minimum_rust(self):
+        self.assertIn("['package']['rust-version']", self.text)
+        self.assertIn('rustup which --toolchain "$msrv" cargo', self.text)
+        self.assertIn('rustup which --toolchain "$msrv" rustc', self.text)
+        self.assertIn('CARGO_TARGET_DIR="$cleanup_dir/msrv-target"', self.text)
+        self.assertIn('check --locked --all-targets', self.text)
     def test_packages_and_installs_locked_without_unlocked_fallback(self):
         self.assertIn('cargo package --locked',self.text); self.assertGreaterEqual(self.text.count('cargo install --'),2)
         self.assertGreaterEqual(self.text.count('--locked --path'),2)

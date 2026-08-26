@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.1 — 2026-08-26 developer preview
+
+- Pin the locked ICU4X transitive dependency set to versions that compile with
+  the declared Rust 1.86 minimum.
+- Add an exact declared-toolchain locked build to release readiness so newer
+  host compilers cannot conceal future MSRV drift.
+- Preserve the 0.10.0 contracts, first-run behavior and non-authorizing
+  boundaries without a wire or serialized-behavior change.
+
 ## 0.10.0 — 2026-08-26 developer preview
 
 - Compose runtime configuration, bounded runtime-health evidence, diagnostics and
