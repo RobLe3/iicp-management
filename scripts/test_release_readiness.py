@@ -16,10 +16,14 @@ class ReleaseLaneContract(unittest.TestCase):
         self.assertNotRegex(self.text,r'cargo install(?![^\n]*--locked)')
         self.assertIn('online-cargo-home', self.text)
     def test_packaged_diagnostic_contract_is_exercised(self):
-        for value in ('contracts/diagnostic-bundle-v1.schema.json', 'fixtures/diagnostic-bundle-conformance-v1.json', 'docs/ADR-009-diagnostic-bundles-are-minimized-evidence.md', 'docs/DIAGNOSTIC_BUNDLE_WORKFLOW.md'):
+        for value in ('contracts/diagnostic-bundle-v1.schema.json', 'fixtures/diagnostic-bundle-conformance-v1.json', 'docs/ADR-009-diagnostic-bundles-are-minimized-evidence.md', 'docs/DIAGNOSTIC_BUNDLE_WORKFLOW.md', 'contracts/diagnostic-bundle-v2.schema.json', 'fixtures/diagnostic-bundle-conformance-v2.json', 'docs/ADR-013-runtime-health-is-non-authorizing-observation.md'):
             self.assertIn(value, self.text)
         self.assertIn('diagnostics verify', self.text)
         self.assertIn('diagnostics show', self.text)
+        self.assertIn('tools/run_diagnostic_v2_conformance.py', self.text)
+        self.assertIn('--runtime-health', self.text)
+        self.assertIn('--runtime-target', self.text)
+        self.assertIn('partial runtime diagnostic flags did not fail closed', self.text)
     def test_refuses_existing_release_tag_and_never_publishes(self):
         self.assertIn('git ls-remote --exit-code --tags',self.text)
         self.assertNotIn('cargo publish',self.text); self.assertNotIn('gh release create',self.text)

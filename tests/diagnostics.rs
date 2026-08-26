@@ -124,7 +124,11 @@ fn runtime(state: RuntimeEffectiveStateV1) -> RuntimeObservationV1 {
         expires_at: "1970-01-01T00:03:20.000Z".into(),
         evidence_state: RuntimeEvidenceStateV1::Current,
         reported_lifecycle: "running".into(),
-        reported_liveness: Liveness::Live,
+        reported_liveness: if state == RuntimeEffectiveStateV1::Unknown {
+            Liveness::Indeterminate
+        } else {
+            Liveness::Live
+        },
         reported_readiness: match state {
             RuntimeEffectiveStateV1::Ready => Readiness::Ready,
             RuntimeEffectiveStateV1::Degraded => Readiness::Degraded,
@@ -178,6 +182,44 @@ fn runtime_aware_bundle_is_v2_minimized_and_schema_valid() {
 }
 
 #[test]
+fn runtime_diagnostic_projection_is_target_independent() {
+    let mut first_runtime = runtime(RuntimeEffectiveStateV1::Ready);
+    let mut second_runtime = first_runtime.clone();
+    first_runtime.target_id = "node:first-private-target".into();
+    second_runtime.target_id = "node:second-private-target".into();
+
+    let first = create_diagnostic_bundle_v2(
+        &assessment(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        &first_runtime,
+        150,
+    )
+    .unwrap();
+    let second = create_diagnostic_bundle_v2(
+        &assessment(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        &second_runtime,
+        150,
+    )
+    .unwrap();
+
+    assert_eq!(first.runtime, second.runtime);
+    assert_eq!(first.base.artifacts.last(), second.base.artifacts.last());
+    for private in ["node:first-private-target", "node:second-private-target"] {
+        assert!(!serde_json::to_string(&first).unwrap().contains(private));
+        assert!(!serde_json::to_string(&second).unwrap().contains(private));
+    }
+}
+
+#[test]
 fn runtime_diagnostic_states_are_truthful_and_tamper_fails() {
     for (state, expected, check) in [
         (
@@ -212,6 +254,9 @@ fn runtime_diagnostic_states_are_truthful_and_tamper_fails() {
     }
     let mut stale = runtime(RuntimeEffectiveStateV1::Unknown);
     stale.evidence_state = RuntimeEvidenceStateV1::Stale;
+    stale
+        .reason_codes
+        .push("IICP-MGMT-RUNTIME-EVIDENCE-STALE".into());
     let mut value =
         create_diagnostic_bundle_v2(&assessment(), None, None, None, None, None, &stale, 150)
             .unwrap();
@@ -489,4 +534,48 @@ fn conformance_fixture_ids_and_expected_outcomes_match_implementation() {
         )
         .unwrap_err()
     );
+}
+
+#[test]
+fn diagnostic_v2_fixture_states_match_implementation() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../fixtures/diagnostic-bundle-conformance-v2.json"
+    ))
+    .unwrap();
+    let cases = fixture["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 9);
+    for (scenario, state) in [
+        ("runtime_ready", RuntimeEffectiveStateV1::Ready),
+        ("runtime_degraded", RuntimeEffectiveStateV1::Degraded),
+        ("runtime_not_ready", RuntimeEffectiveStateV1::NotReady),
+        ("runtime_unknown", RuntimeEffectiveStateV1::Unknown),
+    ] {
+        let case = cases
+            .iter()
+            .find(|case| case["scenario"] == scenario)
+            .unwrap();
+        let bundle = create_diagnostic_bundle_v2(
+            &assessment(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            &runtime(state),
+            150,
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(&bundle.runtime.effective_state).unwrap(),
+            case["expected"]["effective_state"]
+        );
+        assert_eq!(
+            format!("{:?}", bundle.base.checks.last().unwrap().state).to_ascii_uppercase(),
+            case["expected"]["check_state"]
+        );
+        assert_eq!(
+            bundle.base.checks.last().unwrap().reason_code,
+            case["expected"]["reason"]
+        );
+    }
 }

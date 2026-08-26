@@ -98,12 +98,101 @@ pub fn parse_runtime_health(bytes: &[u8]) -> Result<HealthSnapshot, String> {
     serde_json::from_value(raw).map_err(|_| "RUNTIME_HEALTH_SCHEMA_INVALID".into())
 }
 
-fn enum_string<T: Serialize>(value: &T) -> Result<String, String> {
+pub(crate) fn enum_string<T: Serialize>(value: &T) -> Result<String, String> {
     serde_json::to_value(value)
         .map_err(|_| "RUNTIME_HEALTH_SERIALIZATION_FAILED".to_string())?
         .as_str()
         .map(str::to_owned)
         .ok_or_else(|| "RUNTIME_HEALTH_SERIALIZATION_FAILED".into())
+}
+
+fn valid_digest(value: &str) -> bool {
+    value.len() == 71
+        && value.starts_with("sha256:")
+        && value[7..]
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+}
+
+fn expected_effective_state(
+    evidence: &RuntimeEvidenceStateV1,
+    liveness: &Liveness,
+    readiness: &Readiness,
+) -> RuntimeEffectiveStateV1 {
+    if *evidence == RuntimeEvidenceStateV1::Stale {
+        RuntimeEffectiveStateV1::Unknown
+    } else {
+        match liveness {
+            Liveness::NotLive => RuntimeEffectiveStateV1::NotReady,
+            Liveness::Indeterminate => RuntimeEffectiveStateV1::Unknown,
+            _ => match readiness {
+                Readiness::Ready => RuntimeEffectiveStateV1::Ready,
+                Readiness::Degraded => RuntimeEffectiveStateV1::Degraded,
+                Readiness::NotReady => RuntimeEffectiveStateV1::NotReady,
+            },
+        }
+    }
+}
+
+pub fn validate_runtime_observation(
+    value: &RuntimeObservationV1,
+    evaluated_at_unix_s: u64,
+) -> Result<(), String> {
+    let observed = DateTime::parse_from_rfc3339(&value.observed_at)
+        .map_err(|_| "RUNTIME_OBSERVATION_INVALID")?
+        .with_timezone(&Utc);
+    let expires = DateTime::parse_from_rfc3339(&value.expires_at)
+        .map_err(|_| "RUNTIME_OBSERVATION_INVALID")?
+        .with_timezone(&Utc);
+    let evaluated = DateTime::from_timestamp(
+        i64::try_from(evaluated_at_unix_s).map_err(|_| "RUNTIME_OBSERVATION_INVALID")?,
+        0,
+    )
+    .ok_or("RUNTIME_OBSERVATION_INVALID")?;
+    let stale_reason = "IICP-MGMT-RUNTIME-EVIDENCE-STALE";
+    if value.schema_version != RUNTIME_OBSERVATION_SCHEMA
+        || value.evidence_source != RUNTIME_HEALTH_SOURCE
+        || value.authorizes_mutation
+        || value.target_id.trim().is_empty()
+        || value.target_id.len() > 256
+        || !valid_digest(&value.source_digest)
+        || value.reported_lifecycle.is_empty()
+        || value.reported_lifecycle.len() > 64
+        || observed > evaluated
+        || observed > expires
+        || value.reason_codes.len() > 128
+        || value
+            .reason_codes
+            .iter()
+            .any(|reason| reason.is_empty() || reason.len() > 128)
+        || value.subsystems.len() > 128
+        || value.external_connectivity.len() > 128
+        || value
+            .subsystems
+            .keys()
+            .chain(value.external_connectivity.keys())
+            .any(|key| key.is_empty() || key.len() > 128)
+        || value.effective_state
+            != expected_effective_state(
+                &value.evidence_state,
+                &value.reported_liveness,
+                &value.reported_readiness,
+            )
+        || (value.evidence_state == RuntimeEvidenceStateV1::Current && evaluated > expires)
+        || (value.evidence_state == RuntimeEvidenceStateV1::Stale
+            && !value
+                .reason_codes
+                .iter()
+                .any(|reason| reason == stale_reason))
+        || (value.evidence_state == RuntimeEvidenceStateV1::Current
+            && value
+                .reason_codes
+                .iter()
+                .any(|reason| reason == stale_reason))
+    {
+        return Err("RUNTIME_OBSERVATION_INVALID".into());
+    }
+    Ok(())
 }
 
 pub fn project_runtime_health(
@@ -191,7 +280,7 @@ pub fn project_runtime_health(
     }
     reason_codes.sort();
     reason_codes.dedup();
-    Ok(RuntimeObservationV1 {
+    let value = RuntimeObservationV1 {
         schema_version: RUNTIME_OBSERVATION_SCHEMA.into(),
         target_id: target_id.into(),
         evidence_source: RUNTIME_HEALTH_SOURCE.into(),
@@ -207,5 +296,7 @@ pub fn project_runtime_health(
         subsystems: snapshot.subsystems.clone(),
         external_connectivity: snapshot.external_connectivity.clone(),
         authorizes_mutation: false,
-    })
+    };
+    validate_runtime_observation(&value, evaluated_at_unix_s)?;
+    Ok(value)
 }

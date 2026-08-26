@@ -1,4 +1,4 @@
-# Management Foundation 0.7 developer preview
+# Management Foundation 0.8 developer preview
 
 This preview is for local evaluation of the public IICP management contracts,
 planner, controller and conformance runner. It does not install a remote
@@ -41,12 +41,12 @@ After a reviewed release is published, install the exact version with its
 published lockfile:
 
 ```bash
-cargo install iicp-management-core --version 0.7.0 --locked
+cargo install iicp-management-core --version 0.8.0 --locked
 ```
 
 Do not remove `--locked` if installation fails. A locked failure means the
 approved dependency graph could not be reproduced and should be investigated.
-The 0.7 release process tested the packaged `.crate`; it does not authorize
+The 0.8 release process tested the packaged `.crate`; it does not authorize
 publication by itself.
 
 ## Offline bundle
@@ -57,8 +57,8 @@ the packaged source and vendored dependencies. Transfer both the bundle and
 the extracted directory:
 
 ```bash
-tar -xzf iicp-management-core-0.7.0-offline.tar.gz
-cd iicp-management-core-0.7.0
+tar -xzf iicp-management-core-0.8.0-offline.tar.gz
+cd iicp-management-core-0.8.0
 CARGO_HOME="$(mktemp -d)" cargo install --offline --locked --path .
 iicp-management-conformance
 ```
@@ -69,7 +69,7 @@ transfer source.
 
 ## Release validation
 
-The `0.7.0` developer preview is published and its crates.io package and immutable release assets were verified by the guarded publisher. Release
+The `0.8.0` developer preview is published and its crates.io package and immutable release assets were verified by the guarded publisher. Release
 preparation from a clean, reviewed checkout uses `scripts/release_readiness.sh`; do not
 substitute an unlocked registry install. The readiness lane exercises the
 administrator trial workflow through both the packaged crate and vendored

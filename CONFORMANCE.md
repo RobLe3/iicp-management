@@ -115,17 +115,22 @@ controller identity, caller authorization or permission to mutate a target.
 
 ## Diagnostic evidence profile
 
-The diagnostic pack covers complete local evidence, missing optional inputs,
-partial convergence, bundle tampering, sensitive assessment content and unknown
-security-critical extensions:
+The diagnostic packs cover complete and missing local evidence, partial
+convergence, bundle tampering, sensitive content and unknown security-critical
+extensions. Version 2 adds a minimized, target-independent runtime-health
+projection while version 1 remains supported for bundles without runtime input:
 
 ```bash
-cargo test --locked --test diagnostics
+cargo test --locked --test diagnostics --test diagnostics_v2_cli
+python3 tools/run_diagnostic_v2_conformance.py \
+  fixtures/diagnostic-bundle-conformance-v2.json
 ```
 
-The bundle is a content-minimized local projection. Passing the fixture does not
-authenticate its creator, establish target convergence, authorize mutation or
-constitute representative administrator evidence.
+The portable v2 cases cover ready, degraded, not-ready, stale and unknown runtime
+states, semantic tampering, target redaction, the legacy v1 path and unknown
+schema rejection. The bundle is a content-minimized local projection. Passing a
+fixture does not authenticate its creator, establish target convergence,
+authorize mutation or constitute representative administrator evidence.
 
 ## Administrator trial evidence
 

@@ -1,0 +1,15 @@
+{
+  "schema_version": "iicp.management-diagnostic-conformance.v2",
+  "evidence_class": "project-verified",
+  "cases": [
+    {"id":"DIAG2-READY","scenario":"runtime_ready","input":{"evidence_state":"current","liveness":"live","readiness":"ready"},"expected":{"result":"accept","effective_state":"ready","check_state":"PASS","reason":"RUNTIME_READY","action":null}},
+    {"id":"DIAG2-DEGRADED","scenario":"runtime_degraded","input":{"evidence_state":"current","liveness":"live","readiness":"degraded"},"expected":{"result":"accept","effective_state":"degraded","check_state":"WARN","reason":"RUNTIME_DEGRADED","action":"REVIEW_RUNTIME_DEGRADATION"}},
+    {"id":"DIAG2-NOT-READY","scenario":"runtime_not_ready","input":{"evidence_state":"current","liveness":"live","readiness":"not_ready"},"expected":{"result":"accept","effective_state":"not_ready","check_state":"FAIL","reason":"RUNTIME_NOT_READY","action":"RESTORE_RUNTIME_READINESS"}},
+    {"id":"DIAG2-STALE","scenario":"runtime_stale","input":{"evidence_state":"stale","liveness":"live","readiness":"ready"},"expected":{"result":"accept","effective_state":"unknown","check_state":"WARN","reason":"RUNTIME_EVIDENCE_STALE","action":"REFRESH_RUNTIME_EVIDENCE"}},
+    {"id":"DIAG2-UNKNOWN","scenario":"runtime_unknown","input":{"evidence_state":"current","liveness":"indeterminate","readiness":"ready"},"expected":{"result":"accept","effective_state":"unknown","check_state":"WARN","reason":"RUNTIME_STATE_UNKNOWN","action":"REVIEW_RUNTIME_EVIDENCE"}},
+    {"id":"DIAG2-TAMPER","scenario":"semantic_inconsistency","input":{"evidence_state":"current","liveness":"live","readiness":"ready","claimed_effective_state":"not_ready"},"expected":{"result":"reject","reason":"DIAGNOSTIC_RUNTIME_INVALID"}},
+    {"id":"DIAG2-TARGET-REDACTION","scenario":"target_redaction","input":{"target_id":"node:private-fixture"},"expected":{"result":"accept","serialized_target":false,"target_independent_digest":true}},
+    {"id":"DIAG2-LEGACY-V1","scenario":"legacy_v1","input":{"schema_version":"iicp.management-diagnostic-bundle.v1"},"expected":{"result":"accept","runtime_required":false}},
+    {"id":"DIAG2-UNKNOWN-SCHEMA","scenario":"unknown_schema","input":{"schema_version":"iicp.management-diagnostic-bundle.v99"},"expected":{"result":"reject","reason":"DIAGNOSTIC_SCHEMA_UNSUPPORTED"}}
+  ]
+}
