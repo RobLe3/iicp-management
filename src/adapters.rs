@@ -526,6 +526,10 @@ pub struct RuntimeConfigAdapter {
     history: BTreeMap<String, (String, Vec<u8>, AdapterReceipt)>,
     rollback_history: BTreeMap<String, (String, AdapterReceipt)>,
     failure_injection: RuntimeConfigFailureInjection,
+    #[cfg(test)]
+    qualification_permission_denied_before_read: bool,
+    #[cfg(test)]
+    qualification_disk_full_before_stage: bool,
 }
 #[derive(Debug, Clone, Default)]
 pub struct RuntimeConfigFailureInjection {
@@ -560,6 +564,10 @@ impl RuntimeConfigAdapter {
             history: state.history,
             rollback_history: state.rollback_history,
             failure_injection: RuntimeConfigFailureInjection::default(),
+            #[cfg(test)]
+            qualification_permission_denied_before_read: false,
+            #[cfg(test)]
+            qualification_disk_full_before_stage: false,
         })
     }
     pub fn with_failure_injection(mut self, injection: RuntimeConfigFailureInjection) -> Self {
@@ -633,10 +641,18 @@ impl ManagedAdapter for RuntimeConfigAdapter {
         if o.expected_generation != self.generation {
             return Err(AdapterError::Generation);
         }
+        #[cfg(test)]
+        if self.qualification_permission_denied_before_read {
+            return Err(AdapterError::Io);
+        }
         let old = fs::read(&self.path).unwrap_or_default();
         let old_value: Value = serde_json::from_slice(&old).map_err(|_| AdapterError::Invalid)?;
         if !Self::validate(&old_value) {
             return Err(AdapterError::Invalid);
+        }
+        #[cfg(test)]
+        if self.qualification_disk_full_before_stage {
+            return Err(AdapterError::Io);
         }
         let parent = self.path.parent().ok_or(AdapterError::Io)?;
         let mut tmp = tempfile_in(parent).map_err(|_| AdapterError::Io)?;
@@ -813,4 +829,76 @@ fn write_owner_only_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), A
         return Err(AdapterError::Io);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod qualification_failure_tests {
+    use super::*;
+    use iicp_client::runtime_config::OperatingMode;
+
+    fn operation(id: &str, desired: Value) -> AdapterOperation {
+        AdapterOperation {
+            operation_id: id.into(),
+            target_id: "runtime:test".into(),
+            action: "apply".into(),
+            plan_digest: "plan:test".into(),
+            desired_digest: digest(&desired).unwrap(),
+            expected_generation: 0,
+            expires_at: 2000,
+            capability: "runtime-config-v1".into(),
+            desired,
+            related_operation_id: None,
+        }
+    }
+
+    #[test]
+    fn runtime_config_permission_denied_before_read_is_truthful() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("permission-denied.json");
+        let initial = RuntimeConfigV1::preset(OperatingMode::LocalOnly);
+        let initial_bytes = serde_json::to_vec(&initial).unwrap();
+        fs::write(&path, &initial_bytes).unwrap();
+        let desired = serde_json::to_value(initial).unwrap();
+        let mut adapter = RuntimeConfigAdapter::open(&path).unwrap();
+        adapter.qualification_permission_denied_before_read = true;
+        assert_eq!(
+            adapter
+                .apply(&operation("permission-denied", desired), 1000)
+                .unwrap_err(),
+            AdapterError::Io
+        );
+        assert_eq!(fs::read(&path).unwrap(), initial_bytes);
+        assert!(!path.with_extension("iicp-management-state.json").exists());
+    }
+
+    #[test]
+    fn runtime_config_disk_full_before_stage_is_truthful() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("disk-full.json");
+        let initial = RuntimeConfigV1::preset(OperatingMode::LocalOnly);
+        let initial_bytes = serde_json::to_vec(&initial).unwrap();
+        fs::write(&path, &initial_bytes).unwrap();
+        let desired = serde_json::to_value(initial).unwrap();
+        let mut adapter = RuntimeConfigAdapter::open(&path).unwrap();
+        adapter.qualification_disk_full_before_stage = true;
+        assert_eq!(
+            adapter
+                .apply(&operation("disk-full", desired), 1000)
+                .unwrap_err(),
+            AdapterError::Io
+        );
+        assert_eq!(fs::read(&path).unwrap(), initial_bytes);
+        assert_eq!(
+            fs::read_dir(directory.path())
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with(".iicp-stage-"))
+                .count(),
+            0
+        );
+        assert!(!path.with_extension("iicp-management-state.json").exists());
+    }
 }
