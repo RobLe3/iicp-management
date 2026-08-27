@@ -1,0 +1,128 @@
+{
+  "component": "management",
+  "evidence_policy": "digest-only",
+  "network_policy": "isolated-fixtures-only",
+  "non_authorizing": true,
+  "scenario_commands": {
+    "config-malformed": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "bootstrap_workflow_conformance"
+    ],
+    "config-missing": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "bootstrap"
+    ],
+    "config-permission-denied": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "controller_and_adapters"
+    ],
+    "disk-full": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "rollout"
+    ],
+    "interrupted-write": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "rollout"
+    ],
+    "management-invalid-authority": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "progressive_authority"
+    ],
+    "management-network-disabled": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "sandbox"
+    ],
+    "management-secret-redaction": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "diagnostics"
+    ],
+    "minimum-version": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "release_manifest"
+    ],
+    "offline-locked-install": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "release_manifest"
+    ],
+    "package-version-self-report": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "release_manifest"
+    ],
+    "process-crash-restart": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "sandbox"
+    ],
+    "request-timeout": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "sandbox"
+    ],
+    "rollback-last-supported": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "apply_gate"
+    ],
+    "stale-pid-or-lock": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "controller_and_adapters"
+    ],
+    "unsupported-version": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "release_manifest"
+    ]
+  },
+  "schema": "iicp.pre1-component-case-map.v1",
+  "support_command": [
+    "@cargo",
+    "test",
+    "--locked",
+    "--test",
+    "bootstrap_prepare_cli"
+  ]
+}
