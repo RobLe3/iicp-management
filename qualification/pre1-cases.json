@@ -91,6 +91,19 @@
         "--exact"
       ]
     },
+    "management-policy-dispatch-refusal": {
+      "assertion": "unavailable_a_never_falls_back_to_region_or_identity_prohibited_nodes",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "--test",
+        "routing_enforcement",
+        "unavailable_a_never_falls_back_to_region_or_identity_prohibited_nodes",
+        "--",
+        "--exact"
+      ]
+    },
     "management-secret-redaction": {
       "assertion": "runtime_aware_bundle_is_v2_minimized_and_schema_valid",
       "command": [
