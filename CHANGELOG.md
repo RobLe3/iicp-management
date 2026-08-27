@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.11.0 — 2026-08-27 developer-preview candidate
+
 - Add a generation-bound, five-minute process-local projection from supported
   active Management constraints into the Rust client's existing routing policy.
 - Add `ManagedIicpClient`, which intersects caller constraints, revalidates the
@@ -13,6 +15,8 @@
   permitted capacity cannot fall back to region- or identity-prohibited nodes.
 - Keep unsupported policy, Directory wire changes, service deployment and stable
   release authority explicitly outside this additive developer-preview change.
+- Give the additive API a new source and package identity instead of reusing the
+  immutable published `0.10.1` release evidence. Publication remains pending.
 
 ## 0.10.1 — 2026-08-26 developer preview
 

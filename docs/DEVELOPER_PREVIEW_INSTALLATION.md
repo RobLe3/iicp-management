@@ -1,4 +1,4 @@
-# Management Foundation 0.10 developer preview
+# Management Foundation 0.11 developer preview
 
 This preview is for local evaluation of the public IICP management contracts,
 planner, controller and conformance runner. It does not install a remote
@@ -41,7 +41,7 @@ After a reviewed release is published, install the exact version with its
 published lockfile:
 
 ```bash
-cargo install iicp-management-core --version 0.10.1 --locked
+cargo install iicp-management-core --version 0.11.0 --locked
 ```
 
 Do not remove `--locked` if installation fails. A locked failure means the
@@ -57,8 +57,8 @@ the packaged source and vendored dependencies. Transfer both the bundle and
 the extracted directory:
 
 ```bash
-tar -xzf iicp-management-core-0.10.1-offline.tar.gz
-cd iicp-management-core-0.10.1
+tar -xzf iicp-management-core-0.11.0-offline.tar.gz
+cd iicp-management-core-0.11.0
 CARGO_HOME="$(mktemp -d)" cargo install --offline --locked --path .
 iicp-management-conformance
 ```
@@ -69,14 +69,14 @@ transfer source.
 
 ## Release validation
 
-The `0.10.1` developer preview is prepared for guarded publication. Its packaged
-crate and immutable release assets must be verified by the publisher before the
-release is described as published. Release
-preparation from a clean, reviewed checkout uses `scripts/release_readiness.sh`; do not
-substitute an unlocked registry install. The readiness lane exercises the
-administrator trial workflow through both the packaged crate and vendored
-offline bundle and validates the generated release manifest against the
-packaged schema.
+The `0.11.0` source is an unpublished developer-preview candidate. Its packaged
+crate, online and offline installations, immutable release assets and
+Management-to-Client enforcement must pass their guarded gates before
+publication is considered. Release preparation from a clean, reviewed checkout
+uses `scripts/release_readiness.sh`; do not substitute an unlocked registry
+install. The readiness lane exercises the administrator trial workflow through
+both the packaged crate and vendored offline bundle and validates the generated
+release manifest against the packaged schema.
 
 ## Recovery and removal
 
