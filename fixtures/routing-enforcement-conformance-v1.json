@@ -1,0 +1,50 @@
+{
+  "schema": "iicp.management-routing-enforcement-conformance.v1",
+  "cases": [
+    {
+      "id": "eu-known-operator",
+      "policy": {
+        "all": [
+          { "in": ["region", ["EU", "eu-central"]] },
+          { "eq": ["manifest_identity_level", "known_operator"] }
+        ]
+      },
+      "expected": {
+        "allowed_regions": ["eu", "eu-central"],
+        "required_manifest_identity_level": "known_operator",
+        "deny_all": false
+      }
+    },
+    {
+      "id": "contradictory-regions",
+      "policy": {
+        "all": [
+          { "in": ["region", ["eu"]] },
+          { "in": ["region", ["us"]] }
+        ]
+      },
+      "expected": {
+        "allowed_regions": [],
+        "required_manifest_identity_level": null,
+        "deny_all": true
+      }
+    },
+    {
+      "id": "unsupported-approval-fact",
+      "policy": { "eq": ["approved", true] },
+      "expected_error": "ROUTING_ENFORCEMENT_UNSUPPORTED_POLICY"
+    },
+    {
+      "id": "stale-candidate-evidence",
+      "policy": { "eq": ["region", "eu"] },
+      "candidate_evidence": { "observed_at": 100, "expires_at": 120 },
+      "expected_error": "ROUTING_ENFORCEMENT_CANDIDATE_EVIDENCE_STALE"
+    },
+    {
+      "id": "unresolved-candidate-evidence",
+      "policy": { "eq": ["region", "eu"] },
+      "candidate_evidence": { "unresolved_count": 1 },
+      "expected_error": "ROUTING_ENFORCEMENT_CANDIDATE_EVIDENCE_UNRESOLVED"
+    }
+  ]
+}

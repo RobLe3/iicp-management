@@ -11,6 +11,7 @@ administrator, or product-specific operator experiences.
 | Policy administration | Stored revisions, policy sets, application bindings, validation, simulation and generation-bound activation | Runtime eligibility decisions or protocol routing |
 | Policy evaluation | Deterministic effective-policy evaluation, deny precedence and stable reason codes | Administrative approval or provider ranking |
 | Inventory and resolution inspection | Content-minimized candidate evidence, freshness, compatibility and policy eligibility projections | Identity, trust, ranking, provider selection or execution |
+| Process-local routing enforcement | Lossless projection of one active generation and a fresh content-free candidate snapshot into the Rust client's hard routing policy, bounded validity and pre-request revalidation | Discovery, ranking, retries, tickets, dispatch, Directory authority or a remote Management service |
 | Domain-local authority | Authentication, authorization and acceptance of an exact plan within one domain | Authority over another domain or federation-wide superuser rights |
 | Application binding | The association between an application attachment and one or more policy revisions | Upstream application behavior |
 | Request connector | Translation of an upstream request into bounded IICP request and policy context | Policy definition or authority expansion |
@@ -42,7 +43,10 @@ domain-local controller
 effective evidence-backed state
       |
       v
-policy evaluator -> resolver eligibility input
+policy evaluator -> active enforcement projection
+      |
+      v
+Rust client eligibility -> ranking -> dispatch or bounded refusal
 ```
 
 Desired, accepted, observed and effective state remain distinct. Command text,
@@ -57,12 +61,15 @@ cannot widen that authority.
 
 ## Integration boundaries
 
-The policy evaluator determines whether a candidate may satisfy a request;
-provider ranking chooses among eligible candidates. Management proposals cannot
-bypass that order. Discovery, membership, dispatch authority and reputation do
-not grant management authority. Federation does not transfer local policy
-ownership: a domain discloses only the constraints needed for interoperable
-selection and retains the right to refuse.
+The policy evaluator determines whether a candidate may satisfy a request. A
+bounded process-local projection can only narrow the Rust client's native
+routing policy; unsupported or expired policy and stale, unresolved or
+out-of-snapshot candidate evidence refuse before dispatch. Provider ranking then
+chooses among the remaining eligible candidates. Management cannot add a
+provider or bypass that order. Discovery, membership, dispatch authority and
+reputation do not grant management authority. Federation does not transfer local
+policy ownership: a domain discloses only the constraints needed for
+interoperable selection and retains the right to refuse.
 
 Product workflows, dashboards, IAM integrations and managed operations may
 consume these contracts, but they cannot redefine them. Product repositories

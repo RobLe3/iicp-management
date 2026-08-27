@@ -114,6 +114,26 @@ compatibility remain unresolved, and the resulting projection carries no
 mutation authority. Passing the fixture does not authenticate the evidence
 source, authorize dispatch or prove that any provider is reachable.
 
+## Process-local routing enforcement
+
+The routing-enforcement fixture and Rust integration tests cover the supported
+lossless policy projection, contradictory-region refusal, unsupported policy,
+generation and evidence-expiry checks, policy intersection, candidate-snapshot
+binding and real `IicpClient` dispatch:
+
+```bash
+cargo test --locked --test routing_enforcement
+```
+
+The decisive failure case keeps the only permitted node unavailable while a
+region-prohibited node and an identity-prohibited node remain reachable. Both
+receive zero requests, and the client returns `IICP-POLICY-ROUTING` before an
+external ranker or retry path can run. A separate case introduces an otherwise
+permitted candidate outside the bound evidence snapshot and receives
+`IICP-CANDIDATE-RANKER-REFUSED` before provider contact. This is project-owned,
+process-local evidence; it is not representative administrator evidence or
+independent interoperability proof.
+
 ## Direct-controller profile compatibility
 
 The management-profile pack covers exact compatibility, unsupported
