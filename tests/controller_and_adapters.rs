@@ -738,6 +738,26 @@ fn runtime_config_interruption_and_readback_failures_are_truthful() {
 }
 
 #[test]
+fn synthetic_timeout_before_effect_is_truthful_and_does_not_mutate() {
+    let mut adapter = SyntheticAdapter::new();
+    let operation = op(
+        "timeout-before-effect",
+        0,
+        json!({"simulate": "timeout_before_effect"}),
+    );
+    let before = adapter.observe().unwrap();
+    assert_eq!(
+        adapter.apply(&operation, 1000).unwrap_err(),
+        AdapterError::Timeout
+    );
+    assert_eq!(adapter.observe().unwrap(), before);
+    assert_eq!(
+        adapter.apply(&operation, 1000).unwrap_err(),
+        AdapterError::Timeout
+    );
+}
+
+#[test]
 fn runtime_config_never_persists_unsafe_existing_rollback_material() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("unsafe-existing.json");

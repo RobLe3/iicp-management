@@ -3,126 +3,224 @@
   "evidence_policy": "digest-only",
   "network_policy": "isolated-fixtures-only",
   "non_authorizing": true,
-  "scenario_commands": {
-    "config-malformed": [
-      "@cargo",
-      "test",
-      "--locked",
-      "--test",
-      "bootstrap_workflow_conformance"
-    ],
-    "config-missing": [
-      "@cargo",
-      "test",
-      "--locked",
-      "--test",
-      "bootstrap"
-    ],
-    "config-permission-denied": [
-      "@cargo",
-      "test",
-      "--locked",
-      "--test",
-      "controller_and_adapters"
-    ],
-    "disk-full": [
-      "@cargo",
-      "test",
-      "--locked",
-      "--test",
-      "rollout"
-    ],
-    "interrupted-write": [
-      "@cargo",
-      "test",
-      "--locked",
-      "--test",
-      "rollout"
-    ],
-    "management-invalid-authority": [
-      "@cargo",
-      "test",
-      "--locked",
-      "--test",
-      "progressive_authority"
-    ],
-    "management-network-disabled": [
-      "@cargo",
-      "test",
-      "--locked",
-      "--test",
-      "sandbox"
-    ],
-    "management-secret-redaction": [
-      "@cargo",
-      "test",
-      "--locked",
-      "--test",
-      "diagnostics"
-    ],
-    "minimum-version": [
-      "@cargo",
-      "test",
-      "--locked",
-      "--test",
-      "release_manifest"
-    ],
-    "offline-locked-install": [
-      "@cargo",
-      "test",
-      "--locked",
-      "--test",
-      "release_manifest"
-    ],
-    "package-version-self-report": [
-      "@cargo",
-      "test",
-      "--locked",
-      "--test",
-      "release_manifest"
-    ],
-    "process-crash-restart": [
-      "@cargo",
-      "test",
-      "--locked",
-      "--test",
-      "sandbox"
-    ],
-    "request-timeout": [
-      "@cargo",
-      "test",
-      "--locked",
-      "--test",
-      "sandbox"
-    ],
-    "rollback-last-supported": [
-      "@cargo",
-      "test",
-      "--locked",
-      "--test",
-      "apply_gate"
-    ],
-    "stale-pid-or-lock": [
-      "@cargo",
-      "test",
-      "--locked",
-      "--test",
-      "controller_and_adapters"
-    ],
-    "unsupported-version": [
-      "@cargo",
-      "test",
-      "--locked",
-      "--test",
-      "release_manifest"
-    ]
+  "scenarios": {
+    "config-malformed": {
+      "assertion": "runtime_config_preflight_rejects_invalid_config_and_target_mismatch",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "--test",
+        "bootstrap",
+        "runtime_config_preflight_rejects_invalid_config_and_target_mismatch",
+        "--",
+        "--exact"
+      ]
+    },
+    "config-missing": {
+      "assertion": "workflow_omits_proposal_until_assessment_is_ready",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "--test",
+        "bootstrap",
+        "workflow_omits_proposal_until_assessment_is_ready",
+        "--",
+        "--exact"
+      ]
+    },
+    "config-permission-denied": {
+      "assertion": "adapters::qualification_failure_tests::runtime_config_permission_denied_before_read_is_truthful",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "adapters::qualification_failure_tests::runtime_config_permission_denied_before_read_is_truthful",
+        "--",
+        "--exact"
+      ]
+    },
+    "disk-full": {
+      "assertion": "adapters::qualification_failure_tests::runtime_config_disk_full_before_stage_is_truthful",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "adapters::qualification_failure_tests::runtime_config_disk_full_before_stage_is_truthful",
+        "--",
+        "--exact"
+      ]
+    },
+    "interrupted-write": {
+      "assertion": "runtime_config_interruption_and_readback_failures_are_truthful",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "--test",
+        "controller_and_adapters",
+        "runtime_config_interruption_and_readback_failures_are_truthful",
+        "--",
+        "--exact"
+      ]
+    },
+    "management-invalid-authority": {
+      "assertion": "confirmation_and_automatic_mode_fail_closed",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "--test",
+        "progressive_authority",
+        "confirmation_and_automatic_mode_fail_closed",
+        "--",
+        "--exact"
+      ]
+    },
+    "management-network-disabled": {
+      "assertion": "authorized_local_exercise_converges_without_external_activation",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "--test",
+        "sandbox",
+        "authorized_local_exercise_converges_without_external_activation",
+        "--",
+        "--exact"
+      ]
+    },
+    "management-secret-redaction": {
+      "assertion": "runtime_aware_bundle_is_v2_minimized_and_schema_valid",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "--test",
+        "diagnostics",
+        "runtime_aware_bundle_is_v2_minimized_and_schema_valid",
+        "--",
+        "--exact"
+      ]
+    },
+    "minimum-version": {
+      "assertion": "release_manifest_rejects_malformed_versions_and_artifact_drift",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "--test",
+        "release_manifest",
+        "release_manifest_rejects_malformed_versions_and_artifact_drift",
+        "--",
+        "--exact"
+      ]
+    },
+    "offline-locked-install": {
+      "assertion": "release_manifest_schema_accepts_bounded_non_authorizing_evidence",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "--test",
+        "release_manifest",
+        "release_manifest_schema_accepts_bounded_non_authorizing_evidence",
+        "--",
+        "--exact"
+      ]
+    },
+    "package-version-self-report": {
+      "assertion": "generated_release_manifest_matches_schema_and_artifact_version",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "--test",
+        "release_manifest",
+        "generated_release_manifest_matches_schema_and_artifact_version",
+        "--",
+        "--exact"
+      ]
+    },
+    "process-crash-restart": {
+      "assertion": "interrupted_execution_observes_state_before_any_retry",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "--test",
+        "sandbox",
+        "interrupted_execution_observes_state_before_any_retry",
+        "--",
+        "--exact"
+      ]
+    },
+    "request-timeout": {
+      "assertion": "synthetic_timeout_before_effect_is_truthful_and_does_not_mutate",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "--test",
+        "controller_and_adapters",
+        "synthetic_timeout_before_effect_is_truthful_and_does_not_mutate",
+        "--",
+        "--exact"
+      ]
+    },
+    "rollback-last-supported": {
+      "assertion": "exact_recovery_requires_fresh_authority_and_verifies_previous_state",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "--test",
+        "apply_gate",
+        "exact_recovery_requires_fresh_authority_and_verifies_previous_state",
+        "--",
+        "--exact"
+      ]
+    },
+    "stale-pid-or-lock": {
+      "assertion": "controller_replay_restart_and_binding",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "--test",
+        "controller_and_adapters",
+        "controller_replay_restart_and_binding",
+        "--",
+        "--exact"
+      ]
+    },
+    "unsupported-version": {
+      "assertion": "unsupported_operation_and_security_extension_fail_closed",
+      "command": [
+        "@cargo",
+        "test",
+        "--locked",
+        "--test",
+        "profile",
+        "unsupported_operation_and_security_extension_fail_closed",
+        "--",
+        "--exact"
+      ]
+    }
   },
-  "schema": "iicp.pre1-component-case-map.v1",
-  "support_command": [
-    "@cargo",
-    "test",
-    "--locked",
-    "--test",
-    "bootstrap_prepare_cli"
-  ]
+  "schema": "iicp.pre1-component-case-map.v2",
+  "support": {
+    "assertion": "prepare_cli_is_one_step_non_authorizing_and_versioned",
+    "command": [
+      "@cargo",
+      "test",
+      "--locked",
+      "--test",
+      "bootstrap_prepare_cli",
+      "prepare_cli_is_one_step_non_authorizing_and_versioned",
+      "--",
+      "--exact"
+    ]
+  }
 }
