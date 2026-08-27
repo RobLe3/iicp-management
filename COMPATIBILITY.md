@@ -22,6 +22,17 @@ Publication, installation, deployment and adoption are independent facts. A
 crate or GitHub release does not make the controller production-ready and does
 not authorize it to manage a target.
 
+## Process-local routing enforcement
+
+`iicp.management-routing-enforcement.v1` is an additive Management contract
+against the exact supported `iicp-client` line. It does not alter the IICP wire
+protocol or Directory schemas. Unknown or unsupported active constraints,
+inactive or superseded generations, stale or unresolved candidate evidence,
+expired projections and digest mismatch fail before provider contact. An
+unexpected eligible candidate discovered after the snapshot is refused before
+dispatch. An application must not deserialize an unknown projection generation
+as v1 or bypass `ManagedIicpClient` while claiming Management enforcement.
+
 ## Friction evidence
 
 `iicp.management-friction-evidence.v1` remains valid as historical project

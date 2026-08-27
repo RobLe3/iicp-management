@@ -19,6 +19,7 @@ pub mod reconciliation;
 pub mod recovery;
 pub mod resolution;
 pub mod rollout;
+pub mod routing_enforcement;
 pub mod runtime_observation;
 pub mod sandbox;
 pub mod templates;

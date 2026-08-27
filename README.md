@@ -84,6 +84,7 @@ python3 tools/run_progressive_authority_conformance.py fixtures/progressive-auth
 python3 tools/run_adapter_inspection_conformance.py fixtures/adapter-inspection-conformance-v1.json
 python3 tools/run_resolution_inspection_conformance.py fixtures/resolution-inspection-conformance-v1.json
 python3 tools/run_runtime_observation_conformance.py fixtures/runtime-observation-conformance-v1.json
+cargo test --locked --test routing_enforcement
 ```
 
 Release-readiness runs use an isolated Cargo target with incremental
@@ -152,6 +153,25 @@ each candidate as eligible, ineligible or unresolved. Discovery evidence is not
 trust, eligibility is not ranking, and the command performs no selection,
 dispatch or mutation. Expired evidence remains visible and unresolved rather
 than being presented as current eligibility.
+
+## Process-local client enforcement
+
+An active policy can be projected into the Rust client's existing hard routing
+boundary through `RoutingEnforcementProjectionV1` and `ManagedIicpClient`.
+Management binds the active generation, policy and routing digests and a fresh,
+content-free candidate-evidence snapshot. It limits both evidence and projection
+validity to five minutes and refuses unresolved evidence or any active constraint
+it cannot represent without loss. The wrapper revalidates the generation before
+every request, intersects caller policy rather than replacing it, and checks the
+client's opaque eligible references before delegating external ranking, retries,
+tickets and dispatch to `IicpClient`.
+
+The v1 projection supports region, remote-executor, encryption, policy-manifest,
+no-retention and manifest-identity constraints. Contradictory constraints refuse
+all routes instead of becoming an unrestricted policy. It is process-local and
+contains no prompt, response, credential, endpoint or full node identifier; its
+candidate references are one-way, content-free hashes. It is not a protocol
+message, Directory record, remote Management service or deployment authority.
 
 See [`examples/finance`](examples/finance/README.md) for a complete disposable
 workflow. These commands do not authorize or apply changes. Command text and

@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iicp.network/schemas/routing-enforcement-v1.schema.json",
+  "title": "IICP Management process-local routing enforcement projection v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "application_id",
+    "binding_id",
+    "binding_digest",
+    "policy_generation",
+    "effective_policy_digest",
+    "candidate_evidence_digest",
+    "routing_policy_digest",
+    "issued_at",
+    "expires_at",
+    "deny_all",
+    "candidate_evidence",
+    "routing_policy"
+  ],
+  "properties": {
+    "schema_version": { "const": "iicp.management-routing-enforcement.v1" },
+    "application_id": { "type": "string", "minLength": 1 },
+    "binding_id": { "type": "string", "minLength": 1 },
+    "binding_digest": { "$ref": "#/$defs/digest" },
+    "policy_generation": { "type": "integer", "minimum": 1 },
+    "effective_policy_digest": { "$ref": "#/$defs/digest" },
+    "candidate_evidence_digest": { "$ref": "#/$defs/digest" },
+    "routing_policy_digest": { "$ref": "#/$defs/digest" },
+    "issued_at": { "type": "integer", "minimum": 0 },
+    "expires_at": { "type": "integer", "minimum": 1 },
+    "deny_all": { "type": "boolean" },
+    "candidate_evidence": { "$ref": "#/$defs/candidateEvidence" },
+    "routing_policy": { "$ref": "#/$defs/routingPolicy" }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "candidateEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "evidence_source",
+        "observed_at",
+        "expires_at",
+        "eligible_candidate_refs",
+        "ineligible_count",
+        "unresolved_count"
+      ],
+      "properties": {
+        "schema_version": { "const": "iicp.management-routing-candidate-evidence.v1" },
+        "evidence_source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+        },
+        "observed_at": { "type": "integer", "minimum": 0 },
+        "expires_at": { "type": "integer", "minimum": 1 },
+        "eligible_candidate_refs": {
+          "type": "array",
+          "maxItems": 10000,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        },
+        "ineligible_count": { "type": "integer", "minimum": 0 },
+        "unresolved_count": { "const": 0 }
+      }
+    },
+    "routingPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile"],
+      "properties": {
+        "profile": { "enum": ["standard"] },
+        "allowed_regions": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 64 }
+        },
+        "require_encryption": { "type": "boolean" },
+        "require_policy_manifest": { "type": "boolean" },
+        "require_no_payload_retention": { "type": "boolean" },
+        "allow_remote_executor": { "type": "boolean" },
+        "known_operator_only": { "type": "boolean" },
+        "required_manifest_identity_level": {
+          "enum": ["signed_valid", "operator_bound", "known_operator"]
+        }
+      }
+    }
+  }
+}

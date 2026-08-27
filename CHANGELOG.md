@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Add a generation-bound, five-minute process-local projection from supported
+  active Management constraints into the Rust client's existing routing policy.
+- Add `ManagedIicpClient`, which intersects caller constraints, revalidates the
+  active generation before dispatch and delegates discovery, ranking, retry and
+  execution to `IicpClient`.
+- Bind the projection to fresh content-free candidate evidence and refuse
+  unresolved evidence or eligible candidates outside its opaque reference set.
+- Add portable projection fixtures and real-client tests proving that unavailable
+  permitted capacity cannot fall back to region- or identity-prohibited nodes.
+- Keep unsupported policy, Directory wire changes, service deployment and stable
+  release authority explicitly outside this additive developer-preview change.
+
 ## 0.10.1 — 2026-08-26 developer preview
 
 - Pin the locked ICU4X transitive dependency set to versions that compile with

@@ -590,7 +590,7 @@ impl InMemoryPolicyRepository {
         })
     }
 
-    fn sources_for_binding(
+    pub(crate) fn sources_for_binding(
         &self,
         binding: &ApplicationBindingV1,
     ) -> Result<Vec<(PolicyReferenceV1, &PolicyRevisionV1)>, PolicyLifecycleError> {
