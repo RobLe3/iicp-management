@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add component-owned five-target binary-bundle preparation with locked online
+  and vendored offline package proof. The evidence is non-authorizing and does
+  not introduce a Management service or deployment path.
+
 ## 0.11.0 — 2026-08-27 developer-preview candidate
 
 - Add a generation-bound, five-minute process-local projection from supported
