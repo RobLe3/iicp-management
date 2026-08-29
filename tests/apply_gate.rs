@@ -541,6 +541,7 @@ fn published_schema_and_cli_preview_are_stable() {
 #[cfg(unix)]
 #[test]
 fn confirmed_cli_request_is_authorized_over_ipc_without_target_execution() {
+    use std::io::Read;
     use std::process::{Command, Stdio};
     use std::{fs, thread, time::Duration};
 
@@ -570,37 +571,59 @@ fn confirmed_cli_request_is_authorized_over_ipc_without_target_execution() {
         ])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .unwrap();
-    for _ in 0..100 {
+    let mut ready = false;
+    let mut startup_failure = None;
+    for _ in 0..500 {
         if socket.exists() {
+            ready = true;
+            break;
+        }
+        if let Some(status) = server.try_wait().unwrap() {
+            startup_failure = Some(format!("controller exited during startup: {status}"));
             break;
         }
         thread::sleep(Duration::from_millis(10));
     }
-    let output = Command::new(env!("CARGO_BIN_EXE_iicp-management"))
-        .args([
-            "--json",
-            "request-apply",
-            socket.to_str().unwrap(),
-            input.to_str().unwrap(),
-            "--confirm",
-            "operation:finance",
-        ])
-        .output()
-        .unwrap();
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let receipt: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let result = if ready {
+        let output = Command::new(env!("CARGO_BIN_EXE_iicp-management"))
+            .args([
+                "--json",
+                "request-apply",
+                socket.to_str().unwrap(),
+                input.to_str().unwrap(),
+                "--confirm",
+                "operation:finance",
+            ])
+            .output()
+            .unwrap();
+        if output.status.success() {
+            serde_json::from_slice(&output.stdout).map_err(|error| error.to_string())
+        } else {
+            Err(String::from_utf8_lossy(&output.stderr).into_owned())
+        }
+    } else {
+        let _ = server.kill();
+        let _ = server.wait();
+        let mut stderr = String::new();
+        if let Some(mut stream) = server.stderr.take() {
+            let _ = stream.read_to_string(&mut stderr);
+        }
+        Err(format!(
+            "{}{}{}",
+            startup_failure.unwrap_or_else(|| "controller readiness timed out".into()),
+            if stderr.is_empty() { "" } else { ": " },
+            stderr.trim()
+        ))
+    };
+    let _ = server.kill();
+    let _ = server.wait();
+    let receipt: serde_json::Value = result.expect("controller IPC request failed");
     assert_eq!(receipt["decision"], "accepted");
     assert_eq!(receipt["target_effect"], "not_attempted");
     assert_eq!(receipt["convergence"], "not_evaluated");
-    server.kill().unwrap();
-    server.wait().unwrap();
 }
 
 #[test]
