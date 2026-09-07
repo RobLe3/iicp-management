@@ -33,6 +33,8 @@ BINARIES = [
 ]
 
 
+REQUIRED_STEPS = ['locked-tests', 'release-build', 'package-vendor', 'online-install', 'offline-install', 'publish-fragment']
+
 def describe() -> dict:
     return {
         "schema": "iicp.pre1-artifact-builder-description.v1",
@@ -43,6 +45,7 @@ def describe() -> dict:
         "portable_artifacts": ["crate", "release-manifest"],
         "binary_bundle_members": BINARIES,
         "gates": sorted(common.GATES),
+        "required_steps": REQUIRED_STEPS,
         "requires_clean_source": True,
         "non_authorizing": True,
     }
@@ -60,81 +63,88 @@ def build(destination: Path, requested_target: str | None) -> dict:
     staging = run_root / "fragment"
     staging.mkdir()
     try:
-        quality_env = rust_build.cargo_environment(run_root, "quality")
-        common.run(["cargo", "test", "--locked"], ROOT, quality_env)
-        common.run(["cargo", "build", "--release", "--locked", "--bins"], ROOT, quality_env)
-        crate, extracted, offline_source, cache_digest = rust_build.package_and_vendor(
-            ROOT, run_root, "iicp-management-core", version
-        )
-        online = rust_build.install_and_report(
-            ROOT, run_root, extracted, "iicp-management", version, offline=False
-        )
-        offline = rust_build.install_and_report(
-            ROOT,
-            run_root,
-            offline_source / "source",
-            "iicp-management",
-            version,
-            offline=True,
-        )
-        if online != offline:
-            raise ValueError("online and offline Management self-reports differ")
-
-        binary_source = run_root / "binary-bundle"
-        binary_source.mkdir()
-        suffix = ".exe" if os.name == "nt" else ""
-        for name in BINARIES:
-            source = Path(quality_env["CARGO_TARGET_DIR"]) / "release" / (name + suffix)
-            if not source.is_file():
-                raise ValueError(f"Management release binary is unavailable: {name}")
-            shutil.copyfile(source, binary_source / (name + suffix))
-        binary_bundle = staging / f"iicp-management-{version}-{target}.tar.gz"
-        rust_build.deterministic_tar(binary_source, binary_bundle)
-        artifacts = [common.artifact("binary", target, binary_bundle)]
-        if target == PRIMARY_TARGET:
-            copied_crate = staging / crate.name
-            shutil.copyfile(crate, copied_crate)
-            artifacts.append(common.artifact("crate", "any", copied_crate))
-            release_manifest = staging / f"iicp-management-{version}-release-manifest.json"
-            release_manifest.write_text(
-                json.dumps(
-                    {
-                        "schema": "iicp.pre1-management-release-manifest.v1",
-                        "product": "iicp-management-core",
-                        "version": version,
-                        "source_commit": commit,
-                        "channel": "developer-preview",
-                        "binaries": BINARIES,
-                        "management_service": False,
-                        "directory_authority": False,
-                        "publication_authorized": False,
-                        "deployment_authorized": False,
-                        "non_authorizing": True,
-                    },
-                    indent=2,
-                    sort_keys=True,
-                )
-                + "\n"
+        steps = common.RequiredSteps(Path(os.environ.get("IICP_PRE1_REQUIRED_STEP_PATH", str(run_root / "required-steps.json"))), COMPONENT, commit, target, REQUIRED_STEPS)
+        with steps.step("locked-tests"):
+            quality_env = rust_build.cargo_environment(run_root, "quality")
+            common.run(["cargo", "test", "--locked"], ROOT, quality_env)
+        with steps.step("release-build"):
+            common.run(["cargo", "build", "--release", "--locked", "--bins"], ROOT, quality_env)
+        with steps.step("package-vendor"):
+            crate, extracted, offline_source, cache_digest = rust_build.package_and_vendor(
+                ROOT, run_root, "iicp-management-core", version
             )
-            artifacts.append(common.artifact("release-manifest", "any", release_manifest))
-        fragment = common.emit_fragment(
-            staging,
-            component=COMPONENT,
-            source_commit=commit,
-            source_version=version,
-            build_target=target,
-            artifacts=artifacts,
-            lock_inputs_sha256=common.files_sha256(
-                ROOT, [ROOT / "Cargo.toml", ROOT / "Cargo.lock"]
-            ),
-            dependency_cache_sha256=cache_digest,
-            toolchains={
-                "cargo": common.output(["cargo", "--version"], ROOT),
-                "rustc": common.output(["rustc", "--version"], ROOT),
-            },
-        )
-        common.publish_staging(staging, destination)
-        return fragment
+        with steps.step("online-install"):
+            online = rust_build.install_and_report(
+                ROOT, run_root, extracted, "iicp-management", version, offline=False
+            )
+        with steps.step("offline-install"):
+            offline = rust_build.install_and_report(
+                ROOT,
+                run_root,
+                offline_source / "source",
+                "iicp-management",
+                version,
+                offline=True,
+            )
+            if online != offline:
+                raise ValueError("online and offline Management self-reports differ")
+
+        with steps.step("publish-fragment"):
+            binary_source = run_root / "binary-bundle"
+            binary_source.mkdir()
+            suffix = ".exe" if os.name == "nt" else ""
+            for name in BINARIES:
+                source = Path(quality_env["CARGO_TARGET_DIR"]) / "release" / (name + suffix)
+                if not source.is_file():
+                    raise ValueError(f"Management release binary is unavailable: {name}")
+                shutil.copyfile(source, binary_source / (name + suffix))
+            binary_bundle = staging / f"iicp-management-{version}-{target}.tar.gz"
+            rust_build.deterministic_tar(binary_source, binary_bundle)
+            artifacts = [common.artifact("binary", target, binary_bundle)]
+            if target == PRIMARY_TARGET:
+                copied_crate = staging / crate.name
+                shutil.copyfile(crate, copied_crate)
+                artifacts.append(common.artifact("crate", "any", copied_crate))
+                release_manifest = staging / f"iicp-management-{version}-release-manifest.json"
+                release_manifest.write_text(
+                    json.dumps(
+                        {
+                            "schema": "iicp.pre1-management-release-manifest.v1",
+                            "product": "iicp-management-core",
+                            "version": version,
+                            "source_commit": commit,
+                            "channel": "developer-preview",
+                            "binaries": BINARIES,
+                            "management_service": False,
+                            "directory_authority": False,
+                            "publication_authorized": False,
+                            "deployment_authorized": False,
+                            "non_authorizing": True,
+                        },
+                        indent=2,
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+                artifacts.append(common.artifact("release-manifest", "any", release_manifest))
+            fragment = common.emit_fragment(
+                staging,
+                component=COMPONENT,
+                source_commit=commit,
+                source_version=version,
+                build_target=target,
+                artifacts=artifacts,
+                lock_inputs_sha256=common.files_sha256(
+                    ROOT, [ROOT / "Cargo.toml", ROOT / "Cargo.lock"]
+                ),
+                dependency_cache_sha256=cache_digest,
+                toolchains={
+                    "cargo": common.output(["cargo", "--version"], ROOT),
+                    "rustc": common.output(["rustc", "--version"], ROOT),
+                },
+            )
+            common.publish_staging(staging, destination)
+            return fragment
     finally:
         common.clean_failed_staging(run_root)
 
