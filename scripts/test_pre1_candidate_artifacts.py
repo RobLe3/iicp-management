@@ -12,6 +12,14 @@ SCRIPT = ROOT / "scripts/build_pre1_candidate_artifacts.py"
 
 
 class Pre1CandidateArtifactBuilderTest(unittest.TestCase):
+    def test_disposable_windows_path_prefix_is_short(self) -> None:
+        import build_pre1_candidate_artifacts as builder
+        from unittest import mock
+        with mock.patch.object(builder.os, "name", "nt"):
+            self.assertEqual(builder.run_directory_prefix(), "mg-")
+        with mock.patch.object(builder.os, "name", "posix"):
+            self.assertEqual(builder.run_directory_prefix(), "iicp-pre1-management-")
+
     def test_description_names_primary_and_all_binaries(self) -> None:
         value = json.loads(
             subprocess.check_output([sys.executable, str(SCRIPT), "--describe"], text=True)
