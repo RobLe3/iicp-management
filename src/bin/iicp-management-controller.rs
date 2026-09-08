@@ -242,6 +242,7 @@ fn serve(
 #[cfg(windows)]
 mod windows_ipc {
     use super::{process, AdapterHost, Controller, MAX_REQUEST_BYTES};
+    use std::os::windows::io::AsRawHandle;
     use std::{ffi::c_void, mem::size_of, path::Path, ptr};
     use windows_sys::{
         core::PWSTR,
@@ -257,13 +258,14 @@ mod windows_ipc {
                 },
                 GetTokenInformation, TokenUser, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER,
             },
-            Storage::FileSystem::{ReadFile, WriteFile, PIPE_ACCESS_DUPLEX},
+            Storage::FileSystem::{FlushFileBuffers, ReadFile, WriteFile, PIPE_ACCESS_DUPLEX},
             System::{
                 Pipes::{
                     ConnectNamedPipe, CreateNamedPipeW, DisconnectNamedPipe, PIPE_READMODE_BYTE,
                     PIPE_TYPE_BYTE, PIPE_WAIT,
                 },
                 Threading::{GetCurrentProcess, OpenProcessToken},
+                IO::CancelSynchronousIo,
             },
         },
     };
@@ -412,6 +414,41 @@ mod windows_ipc {
         Ok(())
     }
 
+    fn drain_response(pipe: HANDLE, timeout: std::time::Duration) -> Result<(), String> {
+        // DisconnectNamedPipe discards unread replies. Flush waits for the client,
+        // so bound that wait by disconnecting a non-reading peer on timeout.
+        // The caller retains ownership until the worker is joined on every path.
+        let raw = pipe as usize;
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        let worker = std::thread::spawn(move || {
+            let ok = unsafe { FlushFileBuffers(raw as HANDLE) };
+            let error = if ok == 0 {
+                unsafe { GetLastError() }
+            } else {
+                0
+            };
+            let _ = sender.send(error);
+        });
+        let result = receiver.recv_timeout(timeout);
+        if result.is_err() {
+            // Cancel the synchronous flush on its issuing thread. Disconnect alone
+            // does not release it while the client retains its handle. Closing
+            // the session also covers cancellation racing with worker startup.
+            unsafe {
+                CancelSynchronousIo(worker.as_raw_handle() as HANDLE);
+                DisconnectNamedPipe(pipe);
+            }
+        }
+        worker
+            .join()
+            .map_err(|_| "named-pipe drain worker failed")?;
+        match result {
+            Ok(0) => Ok(()),
+            Ok(error) => Err(format!("named-pipe drain failed: {error}")),
+            Err(_) => Err("named-pipe response drain timed out".into()),
+        }
+    }
+
     fn checked_pipe_name(path: &Path) -> Result<Vec<u16>, String> {
         let name = path.to_str().ok_or("named-pipe path is not valid UTF-8")?;
         if !name.starts_with(r"\\.\pipe\") || name.len() <= r"\\.\pipe\".len() {
@@ -465,6 +502,7 @@ mod windows_ipc {
             .to_string(),
         };
         write_response(pipe.0, &response)?;
+        drain_response(pipe.0, std::time::Duration::from_secs(5))?;
         unsafe { DisconnectNamedPipe(pipe.0) };
         Ok(())
     }
@@ -499,6 +537,52 @@ mod windows_ipc {
             assert!(!sddl.contains(";;;WD)"));
             assert!(!sddl.contains(";;;AU)"));
             owner_security_descriptor().unwrap();
+        }
+
+        #[test]
+        fn non_reading_peer_has_bounded_response_drain() {
+            let name = format!(r"\\.\pipe\iicp-drain-test-{}", std::process::id());
+            let wide_name = checked_pipe_name(Path::new(&name)).unwrap();
+            let (finished, result) = std::sync::mpsc::channel();
+            let server = thread::spawn(move || {
+                let raw = unsafe {
+                    CreateNamedPipeW(
+                        wide_name.as_ptr(),
+                        PIPE_ACCESS_DUPLEX,
+                        PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT,
+                        1,
+                        65536,
+                        65536,
+                        0,
+                        ptr::null(),
+                    )
+                };
+                assert_ne!(raw, INVALID_HANDLE_VALUE);
+                let pipe = Handle(raw);
+                let connected = unsafe { ConnectNamedPipe(raw, ptr::null_mut()) };
+                assert!(connected != 0 || unsafe { GetLastError() } == ERROR_PIPE_CONNECTED);
+                write_response(raw, "bounded reply").unwrap();
+                let drained = drain_response(raw, Duration::from_millis(100));
+                finished.send(drained).unwrap();
+                drop(pipe);
+            });
+            let mut client = None;
+            for _ in 0..100 {
+                if let Ok(stream) = OpenOptions::new().read(true).write(true).open(&name) {
+                    client = Some(stream);
+                    break;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            let client = client.expect("test peer could not connect");
+            let outcome = result.recv_timeout(Duration::from_secs(3));
+            // Closing the peer also releases a failed-test worker before joining.
+            drop(client);
+            server.join().unwrap();
+            assert_eq!(
+                outcome.unwrap().unwrap_err(),
+                "named-pipe response drain timed out"
+            );
         }
 
         #[test]
@@ -537,6 +621,8 @@ mod windows_ipc {
             }
             let mut client = client.expect("owner could not connect to named pipe");
             writeln!(client, "{{}}").unwrap();
+            // Force the server to finish writing before the client drains it.
+            thread::sleep(Duration::from_millis(100));
             let mut response = String::new();
             BufReader::new(client).read_line(&mut response).unwrap();
             assert_eq!(
