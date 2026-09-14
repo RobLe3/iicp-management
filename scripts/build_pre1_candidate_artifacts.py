@@ -56,6 +56,13 @@ def run_directory_prefix() -> str:
     return "mg-" if os.name == "nt" else "iicp-pre1-management-"
 
 
+def copy_binary(source: Path, destination: Path) -> None:
+    """Copy a built binary without discarding its executable mode."""
+    shutil.copy2(source, destination)
+    if os.name != "nt" and not os.access(destination, os.X_OK):
+        raise ValueError(f"copied Management binary is not executable: {destination.name}")
+
+
 def build(destination: Path, requested_target: str | None) -> dict:
     common.safe_output(destination)
     target = common.require_target(requested_target, TARGETS)
@@ -102,7 +109,7 @@ def build(destination: Path, requested_target: str | None) -> dict:
                 source = Path(quality_env["CARGO_TARGET_DIR"]) / "release" / (name + suffix)
                 if not source.is_file():
                     raise ValueError(f"Management release binary is unavailable: {name}")
-                shutil.copyfile(source, binary_source / (name + suffix))
+                copy_binary(source, binary_source / (name + suffix))
             binary_bundle = staging / f"iicp-management-{version}-{target}.tar.gz"
             rust_build.deterministic_tar(binary_source, binary_bundle)
             artifacts = [common.artifact("binary", target, binary_bundle)]
