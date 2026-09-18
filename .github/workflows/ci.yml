@@ -16,6 +16,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Test packaged qualification tooling
+        run: |
+          python3 -B scripts/test_pre1_qualification_case.py
+          python3 -B scripts/test_pre1_package_execution.py
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
