@@ -39,6 +39,14 @@ class DriverContractTests(unittest.TestCase):
         )
         self.assertTrue(value["non_authorizing"])
 
+    def test_packaged_case_result_cannot_be_zero_exit_without_one_pass(self) -> None:
+        assertion = "test_fixture"
+        passed = "test test_fixture ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored;\n"
+        self.assertTrue(module.exact_assertion_passed(passed, assertion))
+        for output in ["", passed.replace("1 passed", "0 passed"), passed.replace("0 ignored", "1 ignored"), passed.replace("test_fixture ... ok", "other ... ok")]:
+            self.assertFalse(module.exact_assertion_passed(output, assertion))
+        self.assertEqual(module.description()["case_proof_schema"], "iicp.pre1-packaged-case-proof.v2")
+
     def test_cell_parser_rejects_wrong_component_and_boundary(self) -> None:
         good = "|".join(
             (
