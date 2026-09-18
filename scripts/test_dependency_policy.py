@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import sys
+import tomllib
 import tempfile
 import unittest
 from pathlib import Path
@@ -35,6 +36,20 @@ class DependencyPolicyTests(unittest.TestCase):
         path = self.lock('[[package]]\nname="git-dep"\nversion="1.0.0"\nsource="git+https://example.test/repo"\n[[package]]\nname="mirror"\nversion="1.0.0"\nsource="registry+https://example.test/index"\n')
         result = violations(path)
         self.assertEqual(sum("unapproved source" in item for item in result), 2)
+
+    def test_rejects_rustls_advisory_range(self):
+        for patch in range(13, 45):
+            with self.subTest(patch=patch):
+                self.assertEqual(violations(self.lock(f'[[package]]\nname="rustls"\nversion="0.23.{patch}"\n')), [f"denied package rustls 0.23.{patch}"])
+
+    def test_accepts_rustls_unaffected_and_patched_boundaries(self):
+        for version in ["0.23.12", "0.23.45"]:
+            with self.subTest(version=version):
+                self.assertEqual(violations(self.lock(f'[[package]]\nname="rustls"\nversion="{version}"\n')), [])
+
+    def test_downstream_dependency_has_patched_security_floor(self):
+        config = tomllib.loads((Path(__file__).resolve().parents[1] / "Cargo.toml").read_text())
+        self.assertEqual(config["dependencies"]["rustls"], {"version": "0.23.45", "default-features": False})
 
 if __name__ == "__main__":
     unittest.main()
