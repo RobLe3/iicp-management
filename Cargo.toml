@@ -35,6 +35,9 @@ name = "iicp_management_core"
 path = "src/lib.rs"
 
 [dependencies]
+# Security floor also applies when this crate is a downstream library dependency.
+# No extra TLS features are enabled; existing execution bindings remain unchanged.
+rustls = { version = "0.23.45", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_jcs = "0.2"
 serde_json = "1"
