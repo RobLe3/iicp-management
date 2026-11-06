@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Prepare maintained TLS, trust-store, async and transport dependency pins with stronger source security floors. Existing feature, protocol and authority boundaries are unchanged; no publication or new qualification credit is granted.
+
+
 - Add component-owned five-target binary-bundle preparation with locked online
   and vendored offline package proof. The evidence is non-authorizing and does
   not introduce a Management service or deployment path.
