@@ -37,7 +37,12 @@ path = "src/lib.rs"
 [dependencies]
 # Security floor also applies when this crate is a downstream library dependency.
 # No extra TLS features are enabled; existing execution bindings remain unchanged.
-rustls = { version = "0.23.45", default-features = false }
+rustls = { version = "0.23.46", default-features = false }
+# Constrain already-selected TLS dependencies without enabling new features.
+rustls-webpki = { version = "0.103.16", default-features = false }
+webpki-roots = { version = "1.0.10", default-features = false }
+# Already normally reachable through iicp-client; dev-only constraints do not protect consumers.
+tokio = { version = "1.53.3", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_jcs = "0.2"
 serde_json = "1"
@@ -69,4 +74,4 @@ windows-sys = { version = "0.59", features = [
 jsonschema = { version = "0.33", default-features = false }
 mockito = "1"
 tempfile = "3"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+tokio = { version = "1.53.3", features = ["macros", "rt-multi-thread", "sync"] }
