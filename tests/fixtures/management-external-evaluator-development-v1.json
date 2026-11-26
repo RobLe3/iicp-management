@@ -1,0 +1,471 @@
+{
+  "schema": "iicp.management.external-evaluator.development-cases.v1",
+  "status": "experimental-non-activating",
+  "source_issue": "https://github.com/RobLe3/iicp-management/issues/168",
+  "fixture_context": {
+    "evaluator": "evaluator:fixture",
+    "version": "1",
+    "known_parameters": [
+      "parameter:operation"
+    ],
+    "known_resolvers": [
+      "resolver:fixture-later"
+    ],
+    "noncritical_extensions": [
+      "urn:fixture:display-hint"
+    ],
+    "max_validity": 30
+  },
+  "request": {
+    "request_id": "request:fixture-168",
+    "action": "apply",
+    "target": "target:finance",
+    "audience": "controller:finance-local",
+    "domain": "domain:finance",
+    "policy_generation": 4,
+    "required_parameters": [
+      "parameter:operation"
+    ]
+  },
+  "checked_at": 1000,
+  "result": {
+    "schema": "iicp.management.external-evaluator.development.v1",
+    "evaluator": "evaluator:fixture",
+    "version": "1",
+    "binding": {
+      "request_id": "request:fixture-168",
+      "action": "apply",
+      "target": "target:finance",
+      "audience": "controller:finance-local",
+      "domain": "domain:finance",
+      "policy_generation": 4,
+      "required_parameters": [
+        "parameter:operation"
+      ]
+    },
+    "decision": "allow",
+    "issued_at": 990,
+    "expires_at": 1010,
+    "reasons": [
+      "fixture:policy-allow"
+    ],
+    "evidence": [
+      "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "obligations": [],
+    "extensions": {},
+    "authorizes_mutation": false,
+    "request_digest": "sha256:aea9e976a1f7dbb17b5832112f3c6449b3e11ad32d42058544b698c8adae711d"
+  },
+  "cases": [
+    {
+      "id": "EE1-BOTH-ALLOW",
+      "derivation": "Intersection holds, but compatibility and evaluator agreement are not local-apply authorization.",
+      "expected": {
+        "state": "eligible",
+        "reason": "local_and_external_allow",
+        "authorizes_mutation": false,
+        "preserves_evidence": true,
+        "evidence": {
+          "result_digest": "sha256:aa63116d3ac99b985fe2353f82bfa19ac32b28e2833798163039760481f633aa",
+          "request_id": "request:fixture-168",
+          "evaluator": "evaluator:fixture",
+          "version": "1",
+          "policy_generation": 4,
+          "issued_at": 990,
+          "expires_at": 1010,
+          "checked_at": 1000,
+          "decision": "allow",
+          "reasons": [
+            "fixture:policy-allow"
+          ],
+          "references": [
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ],
+          "request_digest": "sha256:aea9e976a1f7dbb17b5832112f3c6449b3e11ad32d42058544b698c8adae711d"
+        }
+      }
+    },
+    {
+      "id": "EE1-EXTERNAL-DENY",
+      "derivation": "External denial blocks even though local policy allows.",
+      "expected": {
+        "state": "denied",
+        "reason": "deny_precedence",
+        "authorizes_mutation": false,
+        "preserves_evidence": true
+      },
+      "result_overrides": {
+        "decision": "deny",
+        "reasons": [
+          "fixture:policy-deny"
+        ]
+      }
+    },
+    {
+      "id": "EE1-LOCAL-DENY",
+      "derivation": "Local denial blocks despite the external allow.",
+      "expected": {
+        "state": "denied",
+        "reason": "deny_precedence",
+        "authorizes_mutation": false,
+        "preserves_evidence": true
+      },
+      "local_policy": "deny"
+    },
+    {
+      "id": "EE1-UNKNOWN-EVALUATOR-VERSION",
+      "derivation": "The controller does not recognize version 2, so compatibility cannot be inferred.",
+      "expected": {
+        "state": "rejected",
+        "reason": "unsupported_evaluator",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      },
+      "result_overrides": {
+        "version": "2"
+      }
+    },
+    {
+      "id": "EE1-UNKNOWN-PARAMETER",
+      "derivation": "An unknown parameter identity is not a recognized obligation delegated for resolution.",
+      "expected": {
+        "state": "rejected",
+        "reason": "unsupported_required_parameter",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      },
+      "result_overrides": {
+        "binding": {
+          "request_id": "request:fixture-168",
+          "action": "apply",
+          "target": "target:finance",
+          "audience": "controller:finance-local",
+          "domain": "domain:finance",
+          "policy_generation": 4,
+          "required_parameters": [
+            "parameter:unknown"
+          ]
+        }
+      }
+    },
+    {
+      "id": "EE1-NAMED-RESOLUTION",
+      "derivation": "A recognized pending obligation names its resolver and deny-on-failure path. No completion evidence exists.",
+      "expected": {
+        "state": "deferred",
+        "reason": "await_named_resolution",
+        "authorizes_mutation": false,
+        "preserves_evidence": true
+      },
+      "result_overrides": {
+        "decision": "allow_unresolved",
+        "obligations": [
+          {
+            "id": "obligation:review",
+            "resolver": "resolver:fixture-later",
+            "failure": "deny"
+          }
+        ]
+      }
+    },
+    {
+      "id": "EE1-MISSING-RESOLUTION",
+      "derivation": "An unresolved decision without a named obligation and resolver fails closed.",
+      "expected": {
+        "state": "rejected",
+        "reason": "unbound_resolution",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      },
+      "result_overrides": {
+        "decision": "allow_unresolved"
+      }
+    },
+    {
+      "id": "EE1-UNKNOWN-RESOLVER",
+      "derivation": "A named but unsupported resolver cannot satisfy the deferred obligation.",
+      "expected": {
+        "state": "rejected",
+        "reason": "unbound_resolution",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      },
+      "result_overrides": {
+        "decision": "allow_unresolved",
+        "obligations": [
+          {
+            "id": "obligation:review",
+            "resolver": "resolver:unknown",
+            "failure": "deny"
+          }
+        ]
+      }
+    },
+    {
+      "id": "EE1-LOCAL-DENY-UNRESOLVED",
+      "derivation": "A valid named resolution path does not displace the independent local denial.",
+      "expected": {
+        "state": "denied",
+        "reason": "deny_precedence",
+        "authorizes_mutation": false,
+        "preserves_evidence": true
+      },
+      "local_policy": "deny",
+      "result_overrides": {
+        "decision": "allow_unresolved",
+        "obligations": [
+          {
+            "id": "obligation:review",
+            "resolver": "resolver:fixture-later",
+            "failure": "deny"
+          }
+        ]
+      }
+    },
+    {
+      "id": "EE1-EXPIRED",
+      "derivation": "The decision is not fresh at the experiment's exclusive end of its validity window.",
+      "expected": {
+        "state": "rejected",
+        "reason": "stale_or_expired",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      },
+      "checked_at": 1010
+    },
+    {
+      "id": "EE1-WINDOW-TOO-LONG",
+      "derivation": "The active-looking validity window exceeds the controller fixture's permitted 30 ticks.",
+      "expected": {
+        "state": "rejected",
+        "reason": "stale_or_expired",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      },
+      "result_overrides": {
+        "issued_at": 960
+      }
+    },
+    {
+      "id": "EE1-NOT-YET-ISSUED",
+      "derivation": "A future issuance cannot describe an evaluation already performed at the check time.",
+      "expected": {
+        "state": "rejected",
+        "reason": "stale_or_expired",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      },
+      "result_overrides": {
+        "issued_at": 1001
+      }
+    },
+    {
+      "id": "EE1-MISMATCH-ACTION",
+      "derivation": "The result's action does not equal the holder's independently supplied request binding.",
+      "expected": {
+        "state": "rejected",
+        "reason": "binding_mismatch",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      },
+      "result_overrides": {
+        "binding": {
+          "request_id": "request:fixture-168",
+          "action": "read",
+          "target": "target:finance",
+          "audience": "controller:finance-local",
+          "domain": "domain:finance",
+          "policy_generation": 4,
+          "required_parameters": [
+            "parameter:operation"
+          ]
+        }
+      }
+    },
+    {
+      "id": "EE1-MISMATCH-TARGET",
+      "derivation": "The result's target does not equal the holder's independently supplied request binding.",
+      "expected": {
+        "state": "rejected",
+        "reason": "binding_mismatch",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      },
+      "result_overrides": {
+        "binding": {
+          "request_id": "request:fixture-168",
+          "action": "apply",
+          "target": "target:other",
+          "audience": "controller:finance-local",
+          "domain": "domain:finance",
+          "policy_generation": 4,
+          "required_parameters": [
+            "parameter:operation"
+          ]
+        }
+      }
+    },
+    {
+      "id": "EE1-MISMATCH-AUDIENCE",
+      "derivation": "The result's audience does not equal the holder's independently supplied request binding.",
+      "expected": {
+        "state": "rejected",
+        "reason": "binding_mismatch",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      },
+      "result_overrides": {
+        "binding": {
+          "request_id": "request:fixture-168",
+          "action": "apply",
+          "target": "target:finance",
+          "audience": "controller:other",
+          "domain": "domain:finance",
+          "policy_generation": 4,
+          "required_parameters": [
+            "parameter:operation"
+          ]
+        }
+      }
+    },
+    {
+      "id": "EE1-MISMATCH-DOMAIN",
+      "derivation": "The result's domain does not equal the holder's independently supplied request binding.",
+      "expected": {
+        "state": "rejected",
+        "reason": "binding_mismatch",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      },
+      "result_overrides": {
+        "binding": {
+          "request_id": "request:fixture-168",
+          "action": "apply",
+          "target": "target:finance",
+          "audience": "controller:finance-local",
+          "domain": "domain:other",
+          "policy_generation": 4,
+          "required_parameters": [
+            "parameter:operation"
+          ]
+        }
+      }
+    },
+    {
+      "id": "EE1-MISMATCH-POLICY-GENERATION",
+      "derivation": "The result's policy generation does not equal the holder's independently supplied request binding.",
+      "expected": {
+        "state": "rejected",
+        "reason": "binding_mismatch",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      },
+      "result_overrides": {
+        "binding": {
+          "request_id": "request:fixture-168",
+          "action": "apply",
+          "target": "target:finance",
+          "audience": "controller:finance-local",
+          "domain": "domain:finance",
+          "policy_generation": 5,
+          "required_parameters": [
+            "parameter:operation"
+          ]
+        }
+      }
+    },
+    {
+      "id": "EE1-MISMATCH-REQUEST-ID",
+      "derivation": "The result's request id does not equal the holder's independently supplied request binding.",
+      "expected": {
+        "state": "rejected",
+        "reason": "binding_mismatch",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      },
+      "result_overrides": {
+        "binding": {
+          "request_id": "request:other",
+          "action": "apply",
+          "target": "target:finance",
+          "audience": "controller:finance-local",
+          "domain": "domain:finance",
+          "policy_generation": 4,
+          "required_parameters": [
+            "parameter:operation"
+          ]
+        }
+      }
+    },
+    {
+      "id": "EE1-NONCRITICAL-EXTENSION",
+      "derivation": "The experiment explicitly marks the display hint noncritical; its presence cannot change the intersection verdict.",
+      "expected": {
+        "state": "eligible",
+        "reason": "local_and_external_allow",
+        "authorizes_mutation": false,
+        "preserves_evidence": true
+      },
+      "result_overrides": {
+        "extensions": {
+          "urn:fixture:display-hint": "note"
+        }
+      }
+    },
+    {
+      "id": "EE1-UNDECLARED-EXTENSION",
+      "derivation": "Without a prior noncritical declaration the extension cannot be ignored.",
+      "expected": {
+        "state": "rejected",
+        "reason": "undeclared_extension",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      },
+      "result_overrides": {
+        "extensions": {
+          "urn:fixture:unknown": "note"
+        }
+      }
+    },
+    {
+      "id": "EE1-NO-EVIDENCE",
+      "derivation": "No referenced evidence is available to preserve the identity of the external decision.",
+      "expected": {
+        "state": "rejected",
+        "reason": "invalid_evidence",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      },
+      "result_overrides": {
+        "evidence": []
+      }
+    },
+    {
+      "id": "EE1-CLAIMS-AUTHORITY",
+      "derivation": "External evaluator artifacts must never claim mutation authority.",
+      "expected": {
+        "state": "rejected",
+        "reason": "invalid_result",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      },
+      "result_overrides": {
+        "authorizes_mutation": true
+      }
+    },
+    {
+      "id": "EE1-WRONG-REQUEST-DIGEST",
+      "derivation": "A result cannot replace the controller's independently recomputed request digest.",
+      "result_overrides": {
+        "request_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "expected": {
+        "state": "rejected",
+        "reason": "binding_mismatch",
+        "authorizes_mutation": false,
+        "preserves_evidence": false
+      }
+    }
+  ]
+}
