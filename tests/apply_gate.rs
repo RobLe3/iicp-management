@@ -152,6 +152,29 @@ fn restart_after_adapter_receipt_resumes_verification_only() {
 }
 
 #[test]
+fn experimental_external_allow_is_not_local_apply_authorization() {
+    let pack: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/management-external-evaluator-development-v1.json"
+    ))
+    .unwrap();
+    let external = &pack["result"];
+    assert_eq!(external["decision"], "allow");
+    assert_eq!(external["authorizes_mutation"], false);
+
+    let now = 1_700_000_000;
+    let key = SigningKey::from_bytes(&[54; 32]);
+    let gate = gate(&key, OperatingMode::Confirm, now);
+    assert!(
+        preview_apply(&gate, now).is_ok(),
+        "positive local-gate control"
+    );
+    let mut substituted = serde_json::to_value(&gate).unwrap();
+    substituted["authorization"] = external.clone();
+    assert!(serde_json::from_value::<LocalApplyGateV1>(substituted).is_err());
+    assert!(serde_json::from_value::<LocalApplyGateV1>(external.clone()).is_err());
+}
+
+#[test]
 fn execution_requires_previously_persisted_exact_authorization() {
     let now = 1_700_000_000;
     let key = SigningKey::from_bytes(&[42; 32]);
