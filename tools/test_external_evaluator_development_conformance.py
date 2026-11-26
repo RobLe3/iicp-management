@@ -36,6 +36,20 @@ class ExperimentalFixtureTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     validate_pack(value)
 
+    def test_removing_any_current_vector_refuses_the_incomplete_pack(self):
+        for missing in self.pack["cases"]:
+            with self.subTest(case=missing["id"]):
+                value = copy.deepcopy(self.pack)
+                value["cases"] = [case for case in value["cases"] if case["id"] != missing["id"]]
+                with self.assertRaisesRegex(ValueError, "missing required vectors: " + missing["id"]):
+                    validate_pack(value)
+
+    def test_additional_vector_does_not_change_the_required_floor(self):
+        additive = copy.deepcopy(self.pack["cases"][0])
+        additive["id"] = "EE1-OPTIONAL-ADDITIONAL-CONTROL"
+        self.pack["cases"].append(additive)
+        validate_pack(self.pack)
+
     def test_disallowed_json_encodings(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "fixture.json"

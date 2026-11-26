@@ -12,8 +12,10 @@ cargo test --offline --locked --test apply_gate experimental_external_allow_is_n
 
 The Python runner reuses the existing Management profile compatibility fixture.
 Each experimental vector specifies its expected classification separately from
-the runner. The local request and result checksums use sorted, compact ASCII
-JSON over the fixture's string and integer value domain. They are not a wire
+the runner. The v1 checker refuses a pack missing any required vector, so
+dropping a negative case cannot turn an incomplete pack into a pass. The local
+request and result checksums use sorted, compact ASCII JSON over the fixture's
+string and integer value domain. They are not a wire
 canonicalization or signature convention. The fixture uses an exclusive expiry
 tick. Request binding, expiry, reason codes and evidence references remain
 visible in the result; passing the checks does not authenticate those references.

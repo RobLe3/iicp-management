@@ -11,6 +11,19 @@ PROFILE_CASE = "MP1-COMPATIBLE"
 SOURCE_ISSUE = "https://github.com/RobLe3/iicp-management/issues/168"
 MAX_TICK = 2**53 - 1
 MAX_DOCUMENT_BYTES = 128 * 1024
+# Preserve the v1 coverage floor; additional cases remain additive. Without
+# this check a shortened fixture can report success with a rule untested.
+REQUIRED_VECTOR_IDS = frozenset({
+    "EE1-BOTH-ALLOW", "EE1-EXTERNAL-DENY", "EE1-LOCAL-DENY",
+    "EE1-UNKNOWN-EVALUATOR-VERSION", "EE1-UNKNOWN-PARAMETER",
+    "EE1-NAMED-RESOLUTION", "EE1-MISSING-RESOLUTION", "EE1-UNKNOWN-RESOLVER",
+    "EE1-LOCAL-DENY-UNRESOLVED",
+    "EE1-EXPIRED", "EE1-WINDOW-TOO-LONG", "EE1-NOT-YET-ISSUED",
+    "EE1-MISMATCH-ACTION", "EE1-MISMATCH-TARGET", "EE1-MISMATCH-AUDIENCE",
+    "EE1-MISMATCH-DOMAIN", "EE1-MISMATCH-POLICY-GENERATION", "EE1-MISMATCH-REQUEST-ID",
+    "EE1-NONCRITICAL-EXTENSION", "EE1-UNDECLARED-EXTENSION", "EE1-NO-EVIDENCE",
+    "EE1-CLAIMS-AUTHORITY", "EE1-WRONG-REQUEST-DIGEST",
+})
 BINDING_FIELDS = {
     "request_id", "action", "target", "audience", "domain", "policy_generation",
     "required_parameters",
@@ -115,6 +128,9 @@ def validate_pack(pack):
                 or ("evidence" in expected and
                     (not expected["preserves_evidence"] or type(expected["evidence"]) is not dict))):
             raise ValueError("invalid expected outcome envelope")
+    missing = REQUIRED_VECTOR_IDS - ids
+    if missing:
+        raise ValueError("missing required vectors: " + ", ".join(sorted(missing)))
 
 
 def fixture_digest(value):
