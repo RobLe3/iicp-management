@@ -1,3 +1,6 @@
+#[cfg(unix)]
+mod controller_ownership;
+
 use iicp_management_core::adapters::{AdapterHost, RuntimeConfigAdapter, SyntheticAdapter};
 use iicp_management_core::apply_gate::LocalApplyGateV1;
 use iicp_management_core::controller::{
@@ -17,15 +20,25 @@ use iicp_management_core::recovery::{
 };
 use serde::Deserialize;
 #[cfg(unix)]
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::{collections::BTreeSet, env, fs, path::Path};
 
 const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 
-fn open(db: &Path, key: &Path, audience: String, domain: String) -> Result<Controller, String> {
+fn public_key(key: &Path) -> Result<[u8; 32], String> {
     let bytes = fs::read(key).map_err(|e| e.to_string())?;
-    let key =
-        <[u8; 32]>::try_from(bytes.as_slice()).map_err(|_| "public key must be 32 raw bytes")?;
+    <[u8; 32]>::try_from(bytes.as_slice()).map_err(|_| "public key must be 32 raw bytes".into())
+}
+#[cfg(not(unix))]
+fn open(db: &Path, key: &Path, audience: String, domain: String) -> Result<Controller, String> {
+    open_with_key(db, public_key(key)?, audience, domain)
+}
+fn open_with_key(
+    db: &Path,
+    key: [u8; 32],
+    audience: String,
+    domain: String,
+) -> Result<Controller, String> {
     Controller::open(
         db,
         ControllerPolicy {
@@ -175,50 +188,135 @@ fn process(controller: &mut Controller, host: &mut Option<AdapterHost>, line: &s
         }
     }
 }
+// No wire message or controller authorization changes the process lifecycle.
+// Only the OS-authorized local SIGTERM can request a graceful Unix stop.
 #[cfg(unix)]
-fn bind_owner_only(socket: &Path) -> Result<std::os::unix::net::UnixListener, String> {
-    use std::os::unix::{fs::PermissionsExt, net::UnixListener};
+mod unix_stop {
+    use std::io;
+    use std::os::fd::AsRawFd;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
-    // UnixListener::bind creates a socket with mode 0777 filtered by the
-    // process umask. This controller is still single-threaded at startup, so
-    // temporarily narrowing the umask avoids a world-readable interval before
-    // chmod. The explicit chmod remains defense in depth.
-    struct UmaskGuard(libc::mode_t);
-    impl Drop for UmaskGuard {
-        fn drop(&mut self) {
-            unsafe { libc::umask(self.0) };
+    static REQUESTED: AtomicBool = AtomicBool::new(false);
+
+    extern "C" fn request(_: libc::c_int) {
+        // No allocation, locks, SQLite, or filesystem operations in this handler.
+        // alarm is async-signal-safe. Only the FIRST signal starts the bound.
+        if !REQUESTED.swap(true, Ordering::SeqCst) {
+            unsafe { libc::alarm(10) };
         }
     }
 
-    let guard = UmaskGuard(unsafe { libc::umask(0o177) });
-    let listener = UnixListener::bind(socket).map_err(|e| e.to_string());
-    drop(guard);
-    let listener = listener?;
-    fs::set_permissions(socket, fs::Permissions::from_mode(0o600)).map_err(|e| e.to_string())?;
-    Ok(listener)
+    pub(super) fn requested() -> bool {
+        REQUESTED.load(Ordering::SeqCst)
+    }
+
+    pub(super) fn install() -> io::Result<()> {
+        // Called in this binary's main before opening any controller resources.
+        unsafe {
+            let mut action: libc::sigaction = std::mem::zeroed();
+            libc::sigemptyset(&mut action.sa_mask);
+            action.sa_sigaction = libc::SIG_DFL;
+            if libc::sigaction(libc::SIGALRM, &action, std::ptr::null_mut()) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            action.sa_sigaction = request as *const () as libc::sighandler_t;
+            if libc::sigaction(libc::SIGTERM, &action, std::ptr::null_mut()) != 0 {
+                return Err(io::Error::last_os_error());
+            }
+            let mut unblocked: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut unblocked);
+            libc::sigaddset(&mut unblocked, libc::SIGTERM);
+            libc::sigaddset(&mut unblocked, libc::SIGALRM);
+            let rc = libc::pthread_sigmask(libc::SIG_UNBLOCK, &unblocked, std::ptr::null_mut());
+            if rc != 0 {
+                return Err(io::Error::from_raw_os_error(rc));
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn readable(fd: &impl AsRawFd) -> io::Result<bool> {
+        let mut event = libc::pollfd {
+            fd: fd.as_raw_fd(),
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        while !requested() {
+            // A signal just before poll must not strand the idle listener.
+            let n = unsafe { libc::poll(&mut event, 1, 200) };
+            if n > 0 {
+                return Ok(!requested());
+            }
+            if n < 0 && io::Error::last_os_error().kind() != io::ErrorKind::Interrupted {
+                return Err(io::Error::last_os_error());
+            }
+        }
+        Ok(false)
+    }
+}
+
+#[cfg(unix)]
+fn read_frame(stream: &mut std::os::unix::net::UnixStream) -> std::io::Result<Option<Vec<u8>>> {
+    let mut frame = Vec::new();
+    let mut scratch = [0; 4096];
+    while unix_stop::readable(stream)? {
+        let capacity = scratch.len().min(MAX_REQUEST_BYTES + 1 - frame.len());
+        let n = match stream.read(&mut scratch[..capacity]) {
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            result => result?,
+        };
+        let end = scratch[..n].iter().position(|b| *b == b'\n');
+        frame.extend_from_slice(&scratch[..end.map_or(n, |i| i + 1)]);
+        if n == 0 || end.is_some() || frame.len() > MAX_REQUEST_BYTES {
+            return Ok(Some(frame));
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(unix)]
 fn serve(
     mut controller: Controller,
     mut host: Option<AdapterHost>,
-    socket: &Path,
+    listener: &std::os::unix::net::UnixListener,
+    expected: &mut Option<u64>,
 ) -> Result<(), String> {
-    let _ = fs::remove_file(socket);
-    let listener = bind_owner_only(socket)?;
-    for stream in listener.incoming() {
-        let mut stream = stream.map_err(|e| e.to_string())?;
-        let mut line = String::new();
-        BufReader::new(stream.try_clone().map_err(|e| e.to_string())?)
-            .take(MAX_REQUEST_BYTES as u64 + 1)
-            .read_line(&mut line)
-            .map_err(|e| e.to_string())?;
-        let response = if line.len() > MAX_REQUEST_BYTES {
+    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+    while unix_stop::readable(listener).map_err(|e| e.to_string())? {
+        let (mut stream, _) = match listener.accept() {
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::Interrupted | std::io::ErrorKind::WouldBlock
+                ) =>
+            {
+                continue
+            }
+            result => result.map_err(|e| e.to_string())?,
+        };
+        stream.set_nonblocking(false).map_err(|e| e.to_string())?;
+        let Some(frame) = read_frame(&mut stream).map_err(|e| e.to_string())? else {
+            break;
+        };
+        let before = controller.generation().map_err(|e| e.to_string())?;
+        if *expected != Some(before) {
+            *expected = None;
+            return Err("controller generation changed outside an admitted request".into());
+        }
+        // Single-threaded admission point. A signal after this check lets this
+        // call finish, but never dispatches a subsequent request.
+        if unix_stop::requested() {
+            break;
+        }
+        let line = std::str::from_utf8(&frame).map_err(|e| e.to_string())?;
+        *expected = None;
+        let response = if frame.len() > MAX_REQUEST_BYTES {
             serde_json::json!({"decision":"rejected","reason":"REQUEST_INVALID:too_large"})
                 .to_string()
         } else {
-            process(&mut controller, &mut host, &line)
+            process(&mut controller, &mut host, line)
         };
+        *expected = Some(controller.generation().map_err(|e| e.to_string())?);
         writeln!(stream, "{response}").map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -633,6 +731,130 @@ mod windows_ipc {
         }
     }
 }
+#[cfg(unix)]
+fn configured_host(a: &[String]) -> Result<Option<AdapterHost>, String> {
+    if a[1] == "serve" {
+        return Ok(None);
+    }
+    let mut host = AdapterHost::new();
+    match a[7].as_str() {
+        "synthetic-v1" => host.register(
+            a[8].clone(),
+            "synthetic-v1",
+            Box::new(SyntheticAdapter::new()),
+        ),
+        "runtime-config-v1" => {
+            let adapter =
+                RuntimeConfigAdapter::open(Path::new(&a[9])).map_err(|e| e.to_string())?;
+            host.register(a[8].clone(), "runtime-config-v1", Box::new(adapter));
+        }
+        _ => return Err("invalid executor adapter configuration".into()),
+    }
+    Ok(Some(host))
+}
+
+#[cfg(unix)]
+fn run_unix(a: &[String]) -> Result<(), (i32, String)> {
+    let valid = (a.len() == 7 && a[1] == "serve")
+        || (a.len() == 9 && a[1] == "serve-executor" && a[7] == "synthetic-v1")
+        || (a.len() == 10 && a[1] == "serve-executor" && a[7] == "runtime-config-v1");
+    if !valid {
+        return Err((2, "invalid controller or executor configuration".into()));
+    }
+    // This read-only preflight enforces owner-controlled DB/IPC parents before
+    // any claim allocation; the public verification-key parent is a distinct role.
+    let key_path = controller_ownership::checked_public_key_path(
+        Path::new(&a[3]),
+        Path::new(&a[2]),
+        Path::new(&a[4]),
+    )
+    .map_err(|error| (2, error))?;
+    unix_stop::install().map_err(|error| (1, error.to_string()))?;
+    if unix_stop::requested() {
+        return Ok(());
+    }
+    let mut ownership =
+        controller_ownership::ControllerOwnership::acquire(Path::new(&a[3]), Path::new(&a[2]))
+            .map_err(|error| (1, error))?;
+    // Until database initialization begins, startup can retire only the
+    // verified namespace resources. Afterwards every release needs DB proof.
+    let preflight = (|| {
+        if unix_stop::requested() {
+            return Ok(None);
+        }
+        ownership.bind().map_err(|e| (1, e))?;
+        ownership
+            .check_before_initialization()
+            .map_err(|e| (1, e))?;
+        if unix_stop::requested() {
+            return Ok(None);
+        }
+        public_key(&key_path).map(Some).map_err(|e| (2, e))
+    })();
+    let result = match preflight {
+        Err(error) => Err(error),
+        Ok(None) => Ok(()),
+        Ok(Some(_)) if unix_stop::requested() => Ok(()),
+        Ok(Some(key)) => {
+            // No finish on an unconfirmed database open/close. A configured
+            // host may fail to open after SQLite has already written state.
+            let mut expected = None;
+            let outcome = (|| {
+                ownership.prepare_database().map_err(|e| (2, e))?;
+                let controller =
+                    open_with_key(ownership.database(), key, a[5].clone(), a[6].clone())
+                        .map_err(|e| (2, e))?;
+                ownership.check_database_identity().map_err(|e| (1, e))?;
+                expected = Some(controller.generation().map_err(|e| (1, e.to_string()))?);
+                if unix_stop::requested() {
+                    return Ok(());
+                }
+                let host = configured_host(a).map_err(|e| (2, e))?;
+                serve(
+                    controller,
+                    host,
+                    ownership.listener().map_err(|e| (1, e))?,
+                    &mut expected,
+                )
+                .map_err(|e| (1, e))
+            })();
+            // Client, host and Controller are dropped before readback. A
+            // transport error is still an error even if proof permits release.
+            let Some(generation) = expected else {
+                let (code, reason) = outcome
+                    .err()
+                    .unwrap_or((1, "generation unconfirmed".into()));
+                return Err((code, format!("ownership retained: {reason}")));
+            };
+            ownership
+                .verify_closed_store(generation)
+                .map_err(|error| (1, format!("ownership retained: {error}")))?;
+            outcome
+        }
+    };
+    // Closure-owned Controller/host are already closed before this release.
+    // Preserve original startup/usage status2 unless release is uncertain.
+    match (result, ownership.finish()) {
+        (Ok(()), Ok(())) => Ok(()),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(()), Err(release)) => Err((1, format!("owned release uncertain: {release}"))),
+        (Err((_, error)), Err(release)) => {
+            Err((1, format!("{error}; owned release uncertain: {release}")))
+        }
+    }
+}
+
+#[cfg(unix)]
+fn main() {
+    let args: Vec<String> = env::args().collect();
+    if let Err((status, error)) = run_unix(&args) {
+        eprintln!("{error}");
+        // All owned guards have returned before process::exit.
+        std::process::exit(status);
+    }
+}
+
+#[cfg(not(unix))]
 fn main() {
     let a: Vec<String> = env::args().collect();
     if !((a.len() == 7 && a[1] == "serve") || (a.len() >= 9 && a[1] == "serve-executor")) {
