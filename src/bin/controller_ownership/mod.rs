@@ -169,13 +169,19 @@ impl Parent {
         }))
     }
     fn unlink(&self, name: &std::ffi::OsStr) -> Result<(), String> {
+        self.unlink_with_sync(name, File::sync_all)
+    }
+    fn unlink_with_sync(
+        &self,
+        name: &std::ffi::OsStr,
+        sync: impl FnOnce(&File) -> std::io::Result<()>,
+    ) -> Result<(), String> {
         self.check()?;
         let name = Self::name(name)?;
         if unsafe { libc::unlinkat(self.handle.as_raw_fd(), name.as_ptr(), 0) } != 0 {
             return Err(fail(std::io::Error::last_os_error()));
         }
-        self.handle
-            .sync_all()
+        sync(&self.handle)
             .map_err(|e| fail(format!("name removed; directory sync unconfirmed: {e}")))
     }
 }
@@ -334,8 +340,16 @@ impl Claim {
         Ok(())
     }
     fn finish(self) -> Result<(), String> {
+        self.finish_with_sync(File::sync_all)
+    }
+    fn finish_with_sync(
+        self,
+        sync: impl FnOnce(&File) -> std::io::Result<()>,
+    ) -> Result<(), String> {
         self.check()?;
-        self.resource.parent.unlink(&self.resource.name)
+        self.resource
+            .parent
+            .unlink_with_sync(&self.resource.name, sync)
     }
 }
 
@@ -598,12 +612,12 @@ impl ControllerOwnership {
     /// release is never a successful service/cleanup result. No DB/sidecar data
     /// are treated as temporary resources.
     pub(super) fn finish(self) -> Result<(), String> {
-        self.finish_with(Claim::finish)
+        self.finish_with(|_, dir| dir.sync_all())
     }
 
     fn finish_with(
         mut self,
-        retire_claim: impl Fn(Claim) -> Result<(), String>,
+        sync_claim_parent: impl Fn(bool, &File) -> std::io::Result<()>,
     ) -> Result<(), String> {
         self.check_claims()?;
         if self.database_handle.is_some() {
@@ -621,7 +635,14 @@ impl ControllerOwnership {
         self.claims
             .sort_by_key(|c| c.resource.path != database_claim);
         while let Some(claim) = self.claims.pop() {
-            retire_claim(claim)?;
+            let last = claim.resource.path == database_claim;
+            let role = if last { "database" } else { "endpoint" };
+            // The final verified unlink makes handoff visible, not durable.
+            // If sync fails, report non-success; never recreate a claim over
+            // a legitimate successor after the original owner has quiesced.
+            claim
+                .finish_with_sync(|dir| sync_claim_parent(last, dir))
+                .map_err(|e| format!("{role} claim retirement: {e}"))?;
         }
         Ok(())
     }
@@ -640,19 +661,45 @@ mod release_tests {
         let endpoint = dir.path().join("a-sock");
         let mut owner = ControllerOwnership::acquire(&database, &endpoint).unwrap();
         owner.bind().unwrap();
-        let result = owner.finish_with(|claim| {
-            assert_eq!(
-                claim.resource.path,
-                dir.path().join("a-sock.iicp-controller-owner")
-            );
-            Err("fixture: prior claim retirement unconfirmed".into())
+        let result = owner.finish_with(|last, _dir| {
+            assert!(!last, "database claim retired before the endpoint claim");
+            Err(std::io::Error::other("fixture: sync unconfirmed"))
         });
-        assert_eq!(
-            result.unwrap_err(),
-            "fixture: prior claim retirement unconfirmed"
+        let reason = result.unwrap_err();
+        assert!(
+            reason.contains("endpoint claim retirement")
+                && reason.contains("directory sync unconfirmed")
         );
         assert!(dir.path().join("z-db.iicp-controller-owner").is_file());
         assert!(ControllerOwnership::acquire(&database, &dir.path().join("fresh")).is_err());
+    }
+
+    #[test]
+    fn final_claim_removal_allows_handoff_but_failed_sync_is_not_clean_success() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let database = dir.path().join("db");
+        let endpoint = dir.path().join("endpoint");
+        let mut owner = ControllerOwnership::acquire(&database, &endpoint).unwrap();
+        owner.bind().unwrap();
+        let result = owner.finish_with(|last, parent| {
+            if last {
+                Err(std::io::Error::other("fixture: final sync failed"))
+            } else {
+                parent.sync_all()
+            }
+        });
+        let reason = result.unwrap_err();
+        assert!(
+            reason.contains("database claim retirement")
+                && reason.contains("name removed; directory sync unconfirmed")
+        );
+        // Only the sync result was injected. Both the unlink and subsequent
+        // acquisition operate on real, private fixture names.
+        ControllerOwnership::acquire(&database, &endpoint)
+            .unwrap()
+            .finish()
+            .unwrap();
     }
 
     #[test]
