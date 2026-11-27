@@ -204,77 +204,274 @@ fn concurrent_generation_has_one_winner_without_widening_authority() {
 }
 
 #[cfg(unix)]
-#[test]
-fn headless_controller_transcript_is_owner_only_and_restart_safe() {
-    use std::io::{BufRead, BufReader, Write};
-    use std::os::unix::{fs::PermissionsExt, net::UnixStream};
-    use std::process::{Command, Stdio};
+mod headless_transcript {
+    use super::*;
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::os::unix::{
+        fs::{FileTypeExt, MetadataExt, PermissionsExt},
+        net::UnixStream,
+    };
+    use std::path::{Path, PathBuf};
+    use std::process::{Child, Command, ExitStatus, Stdio};
     use std::thread;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
-    let d = tempfile::tempdir().unwrap();
-    let socket = d.path().join("controller.sock");
-    let db = d.path().join("controller.db");
-    let public_key = d.path().join("controller.pub");
-    let key = SigningKey::from_bytes(&[10; 32]);
-    std::fs::write(&public_key, key.verifying_key().to_bytes()).unwrap();
-    let now = Controller::now();
-    let direct_apply = request(&key, "legacy-apply", 0, now);
-    let mut signed = request(&key, "cli-transcript", 0, now);
-    signed.action = "observe".into();
-    sign_request(&key, &mut signed);
+    const TIMEOUT: Duration = Duration::from_secs(5);
 
-    let start = || {
-        Command::new(env!("CARGO_BIN_EXE_iicp-management-controller"))
-            .args([
-                "serve",
-                socket.to_str().unwrap(),
-                db.to_str().unwrap(),
-                public_key.to_str().unwrap(),
-                "controller:test",
-                "domain:test",
-            ])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap()
-    };
-    let transact = |request: &ManagementRequest| {
-        let mut stream = UnixStream::connect(&socket).unwrap();
-        writeln!(stream, "{}", serde_json::to_string(request).unwrap()).unwrap();
-        let mut response = String::new();
-        BufReader::new(stream).read_line(&mut response).unwrap();
-        serde_json::from_str::<serde_json::Value>(&response).unwrap()
-    };
+    // Own the spawned fixture child even when an assertion unwinds.
+    struct Service(Child);
 
-    let mut child = start();
-    for _ in 0..100 {
-        if socket.exists() {
-            break;
+    impl Service {
+        fn stop(&mut self) {
+            if self.0.try_wait().unwrap().is_none() {
+                self.0.kill().expect("stop the owned fixture child");
+            }
+            self.0.wait().expect("reap the owned fixture child");
         }
-        thread::sleep(Duration::from_millis(10));
-    }
-    assert!(socket.exists());
-    assert_eq!(
-        std::fs::metadata(&socket).unwrap().permissions().mode() & 0o777,
-        0o600
-    );
-    let direct = transact(&direct_apply);
-    assert_eq!(direct["decision"], "rejected");
-    assert_eq!(direct["reason"], "REQUEST_APPLY_GATE_REQUIRED");
-    assert_eq!(transact(&signed)["decision"], "accepted");
-    child.kill().unwrap();
-    child.wait().unwrap();
 
-    let mut restarted = start();
-    thread::sleep(Duration::from_millis(100));
-    assert!(socket.exists());
-    let replay = transact(&signed);
-    assert_eq!(replay["decision"], "rejected");
-    assert_eq!(replay["reason"], "REQUEST_REPLAY");
-    restarted.kill().unwrap();
-    restarted.wait().unwrap();
+        fn terminate(&mut self) {
+            assert!(self.0.try_wait().unwrap().is_none());
+            // This is our unreaped child in the private fixture, not a pidfile.
+            let pid = libc::pid_t::try_from(self.0.id()).unwrap();
+            assert_eq!(unsafe { libc::kill(pid, libc::SIGTERM) }, 0);
+            let deadline = Instant::now() + TIMEOUT;
+            loop {
+                if let Some((status, diagnostic)) = self.exit_reason("SIGTERM") {
+                    assert!(status.success(), "shutdown: {status}: {diagnostic}");
+                    return;
+                }
+                assert!(Instant::now() < deadline, "clean stop was not confirmed");
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+        fn exit_reason(&mut self, phase: &str) -> Option<(ExitStatus, String)> {
+            let status = self.0.try_wait().expect("read child status")?;
+            let mut message = String::new();
+            self.0
+                .stderr
+                .take()
+                .expect("captured stderr")
+                .take(4096)
+                .read_to_string(&mut message)
+                .expect(phase);
+            Some((status, message))
+        }
+
+        fn transact(&mut self, phase: &str, endpoint: &Path, request: &ManagementRequest) -> Value {
+            let deadline = Instant::now() + TIMEOUT;
+            let mut stream = loop {
+                if let Some((status, message)) = self.exit_reason(phase) {
+                    panic!("{phase}: controller exited {status} before connection: {message}");
+                }
+                match UnixStream::connect(endpoint) {
+                    Ok(stream) => break stream,
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::NotFound | std::io::ErrorKind::ConnectionRefused
+                        ) && Instant::now() < deadline =>
+                    {
+                        thread::sleep(Duration::from_millis(10))
+                    }
+                    Err(error) => panic!("{phase}: connection failed: {error}"),
+                }
+            };
+            stream.set_read_timeout(Some(TIMEOUT)).expect(phase);
+            stream.set_write_timeout(Some(TIMEOUT)).expect(phase);
+            writeln!(stream, "{}", serde_json::to_string(request).unwrap()).expect(phase);
+            let mut response = String::new();
+            BufReader::new(stream)
+                .take(65536)
+                .read_line(&mut response)
+                .expect(phase);
+            serde_json::from_str(&response).expect(phase)
+        }
+
+        fn refusal(&mut self, phase: &str) -> String {
+            let deadline = Instant::now() + TIMEOUT;
+            loop {
+                if let Some((status, message)) = self.exit_reason(phase) {
+                    assert_eq!(status.code(), Some(1), "{phase}: {message}");
+                    assert!(
+                        message.starts_with("CONTROLLER_OWNERSHIP:"),
+                        "{phase}: {message}"
+                    );
+                    return message;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "{phase}: controller did not refuse"
+                );
+                thread::sleep(Duration::from_millis(10));
+            }
+        }
+    }
+
+    impl Drop for Service {
+        fn drop(&mut self) {
+            // A test panic must not leave a fixture service behind.
+            if self.0.try_wait().ok().flatten().is_none() {
+                let _ = self.0.kill();
+            }
+            let _ = self.0.wait();
+        }
+    }
+
+    struct Fixture {
+        dir: tempfile::TempDir,
+        db: PathBuf,
+        public_key: PathBuf,
+        key: SigningKey,
+    }
+    impl Fixture {
+        fn new() -> Self {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+            let db = dir.path().join("controller.db");
+            let public_key = dir.path().join("controller.pub");
+            let key = SigningKey::from_bytes(&[10; 32]);
+            std::fs::write(&public_key, key.verifying_key().to_bytes()).unwrap();
+            Self {
+                dir,
+                db,
+                public_key,
+                key,
+            }
+        }
+
+        fn start(&self, endpoint: &Path) -> Service {
+            Service(
+                Command::new(env!("CARGO_BIN_EXE_iicp-management-controller"))
+                    .arg("serve")
+                    .arg(endpoint)
+                    .arg(&self.db)
+                    .arg(&self.public_key)
+                    .args(["controller:test", "domain:test"])
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::piped())
+                    .spawn()
+                    .expect("spawn owned controller"),
+            )
+        }
+
+        fn observe(&self) -> ManagementRequest {
+            let mut signed = request(&self.key, "cli-transcript", 0, Controller::now());
+            signed.action = "observe".into();
+            sign_request(&self.key, &mut signed);
+            signed
+        }
+    }
+
+    #[test]
+    fn forced_stop_refuses_replacement_without_replacing_endpoint() {
+        let f = Fixture::new();
+        let endpoint = f.dir.path().join("first.sock");
+        let mut first = f.start(&endpoint);
+        let direct = request(&f.key, "legacy-apply", 0, Controller::now());
+        let denied = first.transact("first owner: direct apply", &endpoint, &direct);
+        assert_eq!(denied["decision"], "rejected");
+        assert_eq!(denied["reason"], "REQUEST_APPLY_GATE_REQUIRED");
+        assert_eq!(
+            first.transact("first owner: signed observe", &endpoint, &f.observe())["decision"],
+            "accepted"
+        );
+        let identity = || {
+            let m = std::fs::symlink_metadata(&endpoint).unwrap();
+            assert!(m.file_type().is_socket());
+            assert_eq!(m.permissions().mode() & 0o777, 0o600);
+            (m.dev(), m.ino())
+        };
+        let original = identity();
+        first.stop();
+        let reason = f.start(&endpoint).refusal("replacement after forced stop");
+        assert!(reason.contains("endpoint already exists"), "{reason}");
+        assert_eq!(identity(), original);
+        let other = f.dir.path().join("other.sock");
+        f.start(&other)
+            .refusal("fresh endpoint cannot reclaim the force-stopped database");
+        assert!(!other.try_exists().unwrap());
+    }
+
+    #[test]
+    fn fresh_headless_endpoint_rejects_replay_from_cleanly_closed_controller_store() {
+        let f = Fixture::new();
+        let signed = f.observe();
+        // This positive control starts with a library controller, not a killed
+        // serving process. The next process must open the very same database.
+        {
+            let mut policy = policy(signed.issued_at);
+            policy.allowed_actions.insert("observe".into());
+            let mut original =
+                Controller::open(&f.db, policy, f.key.verifying_key().to_bytes()).unwrap();
+            assert_eq!(
+                original
+                    .evaluate(&signed, signed.issued_at)
+                    .unwrap()
+                    .generation,
+                1
+            );
+        }
+        let fresh = f.dir.path().join("fresh.sock");
+        let mut next = f.start(&fresh);
+        let replay = next.transact("new endpoint: persisted replay", &fresh, &signed);
+        assert_eq!(replay["decision"], "rejected");
+        assert_eq!(replay["reason"], "REQUEST_REPLAY");
+        next.stop();
+    }
+
+    #[test]
+    fn headless_controller_transcript_is_owner_only_and_restart_safe() {
+        let f = Fixture::new();
+        let first_endpoint = f.dir.path().join("first.sock");
+        let next_endpoint = f.dir.path().join("next.sock");
+        let signed = f.observe();
+        let mut first = f.start(&first_endpoint);
+        assert_eq!(
+            first.transact("first headless owner: accept", &first_endpoint, &signed)["decision"],
+            "accepted"
+        );
+        let before = std::fs::metadata(&f.db).unwrap();
+        f.start(&next_endpoint)
+            .refusal("active owner retains database");
+        assert!(!next_endpoint.try_exists().unwrap());
+        assert_eq!(
+            first.transact("incumbent still enforces replay", &first_endpoint, &signed)["reason"],
+            "REQUEST_REPLAY"
+        );
+        first.terminate();
+        for name in [
+            "first.sock",
+            "first.sock.iicp-controller-owner",
+            "controller.db.iicp-controller-owner",
+        ] {
+            assert!(
+                !f.dir.path().join(name).try_exists().unwrap(),
+                "not released: {name}"
+            );
+        }
+        let after = std::fs::metadata(&f.db).unwrap();
+        assert_eq!((after.dev(), after.ino()), (before.dev(), before.ino()));
+        let mut next = f.start(&next_endpoint);
+        let replay = next.transact(
+            "second headless owner: persisted replay",
+            &next_endpoint,
+            &signed,
+        );
+        assert_eq!(replay["decision"], "rejected");
+        assert_eq!(replay["reason"], "REQUEST_REPLAY");
+        let mut fresh = request(&f.key, "after-restart", 1, Controller::now());
+        fresh.action = "observe".into();
+        sign_request(&f.key, &mut fresh);
+        let accepted = next.transact(
+            "second headless owner: preserved generation",
+            &next_endpoint,
+            &fresh,
+        );
+        assert_eq!(accepted["decision"], "accepted");
+        assert_eq!(accepted["generation"], 2);
+        next.terminate();
+    }
 }
 fn op(id: &str, g: u64, v: serde_json::Value) -> AdapterOperation {
     AdapterOperation {
