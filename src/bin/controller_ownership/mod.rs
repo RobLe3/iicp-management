@@ -15,6 +15,11 @@ use std::path::{Path, PathBuf};
 const SUFFIX: &str = ".iicp-controller-owner";
 const MAX_CLAIM_BYTES: u64 = 4096;
 
+// MetadataExt uses u32; libc mode bits are u16 on Darwin and u32 on Linux.
+fn mode_bits(mode: impl Into<u32>) -> u32 {
+    mode.into()
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Identity {
     dev: u64,
@@ -28,7 +33,7 @@ impl Identity {
             dev: meta.dev(),
             ino: meta.ino(),
             uid: meta.uid(),
-            kind: meta.mode() & (libc::S_IFMT as u32),
+            kind: meta.mode() & mode_bits(libc::S_IFMT),
         }
     }
 }
@@ -42,26 +47,26 @@ fn safe_directory(meta: &Metadata) -> bool {
     meta.is_dir()
         && (meta.uid() == uid() || meta.uid() == 0)
         && (meta.mode() & 0o022 == 0
-            || (meta.uid() == 0 && meta.mode() & (libc::S_ISVTX as u32) != 0))
+            || (meta.uid() == 0 && meta.mode() & mode_bits(libc::S_ISVTX) != 0))
 }
 
 struct Entry {
     identity: Identity,
-    mode: u32,
-    links: u64,
+    mode: libc::mode_t,
+    links: libc::nlink_t,
     length: u64,
 }
 impl Entry {
     fn is_file(&self) -> bool {
-        self.identity.kind == (libc::S_IFREG as u32)
+        self.identity.kind == mode_bits(libc::S_IFREG)
     }
     fn uid(&self) -> u32 {
         self.identity.uid
     }
-    fn nlink(&self) -> u64 {
+    fn nlink(&self) -> libc::nlink_t {
         self.links
     }
-    fn mode(&self) -> u32 {
+    fn mode(&self) -> libc::mode_t {
         self.mode
     }
     fn len(&self) -> u64 {
@@ -156,15 +161,20 @@ impl Parent {
             return Err(fail(error));
         }
         let stat = unsafe { stat.assume_init() };
+        // Match MetadataExt::dev(), including the signed dev_t on Darwin.
+        #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
+        let device = stat.st_dev;
+        #[cfg(not(all(target_os = "linux", target_pointer_width = "64")))]
+        let device = stat.st_dev as u64;
         Ok(Some(Entry {
             identity: Identity {
-                dev: stat.st_dev as u64,
+                dev: device,
                 ino: stat.st_ino,
                 uid: stat.st_uid,
-                kind: stat.st_mode as u32 & (libc::S_IFMT as u32),
+                kind: mode_bits(stat.st_mode & libc::S_IFMT),
             },
-            mode: stat.st_mode as u32,
-            links: stat.st_nlink as u64,
+            mode: stat.st_mode,
+            links: stat.st_nlink,
             length: stat.st_size as u64,
         }))
     }
